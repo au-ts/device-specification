@@ -44,6 +44,32 @@ Datatype:
 End
 
 Datatype:
+  intr_test_fields = <|
+    fmt_threshold : 1 word;
+    rx_threshold : 1 word;
+    fmt_overflow : 1 word;
+    rx_overflow : 1 word;
+    nak : 1 word;
+    scl_interference : 1 word;
+    sda_interference : 1 word;
+    stretch_timeout : 1 word;
+    sda_unstable : 1 word;
+    cmd_complete : 1 word;
+    tx_stretch : 1 word;
+    tx_overflow : 1 word;
+    acq_full : 1 word;
+    unexp_stop : 1 word;
+    host_timeout : 1 word;
+  |>
+End
+
+Datatype:
+  alert_test_fields = <|
+    fatal_fault : 1 word;
+  |>
+End
+
+Datatype:
   ctrl_fields = <|
     enablehost : 1 word;
     enabletarget : 1 word;
@@ -162,6 +188,22 @@ Datatype:
     txdata : txdata_fields;
     host_timeout_ctrl : host_timeout_ctrl_fields;
   |>
+End
+
+Datatype:
+  i2c_hwext_read_notif = rdata_read | acqdata_read
+End
+
+Datatype:
+  i2c_hwext_write_notif = intr_test_write intr_test_fields | alert_test_write alert_test_fields
+End
+
+Datatype:
+  i2c_hwext_notif = Read i2c_hwext_read_notif | Write i2c_hwext_write_notif
+End
+
+Datatype:
+  i2c_notif = fdata_write | fifo_ctrl_write | txdata_write
 End
 
 val _ = export_theory();

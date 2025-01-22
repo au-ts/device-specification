@@ -5,13 +5,28 @@ val _ = new_theory("i2cCore");
 
 Datatype:
   i2c_state = <|
-    (* An infinite stream of non-deterministic bits used to determine what in the
-    * hardware's state has changed since the last shared memory access.
-    *
-    * Having a version of this for each peripheral is a bit silly, but should allow
-    * proving theorems about each of them independently. *)
-    fbits : num -> bool;
+    (* An infinite stream of non-deterministic numbers used to determine what in the
+     * hardware's state has changed since the last shared memory access.
+     *
+     * This is inspired by `CakeML/hardware`'s `fbits`; we use `num`s instead of
+     * bits because with bits, it's tricky to define how they're interpreted to
+     * produce the number of ticks that pass between each read/write. My initial
+     * idea was to interpret each bit as 'should we keep going', and thus end up
+     * using the number of leading ones as the number of ticks; however, if `fbits`
+     * was all 1s, that would cause `apply_fbits` not to terminate. With `num`s, we
+     * can just take the first `num` from the list and use that as the number of
+     * ticks.
+     *
+     * Having a version of this for each peripheral is a bit silly, but should allow
+     * proving theorems about each of them independently. *)
+    fnums : num -> num;
     regs: i2c_regs;
+    (* Although there can only be one regbus transaction per clock cycle, because
+     * non-`hwext` transactions only issue notifications on the next clock cycle,
+     * whereas `hwext` transactions issue notifications immediately, you can end up
+     * with two notifications on the same clock cycle if you have a non-`hwext`
+     * transaction immediately followed by a `hwext` transaction. *)
+    buffered_notif: i2c_notif option;
   |>
 End
 
@@ -123,12 +138,31 @@ Definition i2c_txdata_written_def:
 End
 
 
-(* Simulates an unknown amount of time passing, using `st.fbits` both to
- * determine the amount of time elapsed and what external events or
- * non-deterministic behaviour (i.e., behaviour we didn't bother modelling)
- * happened during that time. *)
+(* Simulates one clock cycle of the I2C core.
+ *
+ * Register reads/writes are handled externally, with new values simply being
+ * made available in `st`. If the hardware has a `qe`/`re` signal to detect
+ * interactions with a register, a notification is provided that that's occured.
+ * For regular registers, this occurs on the clock cycle after the I/O actually
+ * occurs, but for `hwext` registers it occurs on the same clock cycle. *)
+Definition i2c_tick_def:
+  i2c_tick (hwext_notif: i2c_hwext_notif option) (st: i2c_state) =
+    let
+      notif = st.buffered_notif;
+      st' = st with buffered_notif := NONE;
+    in
+      st'
+End
+
+(* Simulates an unknown amount of time passing, using `st.fnums` to determine
+ * the amount of time elapsed. *)
 Definition apply_fbits_def:
-  apply_fbits (st: i2c_state) = st
+  apply_fbits (st: i2c_state) =
+    let
+      ticks = st.fnums 0;
+      st' = st with fnums := st.fnums o SUC;
+    in
+      FUNPOW (i2c_tick NONE) ticks st'
 End
 
 val _ = export_theory();

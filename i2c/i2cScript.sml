@@ -28,7 +28,8 @@ Definition i2c_oracle_def:
       (* The F means little-endian; nothing else in CakeML bothers handling big-endian
        * systems, so I won't here either. *)
       addr_word = word_of_bytes F 0w (DROP addr_offset bytes) : 'a word;
-      addr = w2n addr_word
+      addr = w2n addr_word;
+      st' = apply_fbits st;
     in
       if addr < region_start \/ addr >= region_end then
         Oracle_final FFI_failed
@@ -38,16 +39,18 @@ Definition i2c_oracle_def:
             (* TODO: I'm pretty sure 64-bit reads get split up into two 32-bit reads. Use
              * bits from `fbits` to reorder the reads non-deterministically, `i2c_read`
              * should already use `fbits` to simulate an arbitrary delay between reads. *)
-            (case i2c_read st nb' (addr - region_start) of
+            (case i2c_read st' nb' (addr - region_start) of
               INL outcome => Oracle_final outcome
-            | INR (st', value) => Oracle_return st' (TAKE nb' (word_to_bytes value F)))
+            | INR (notif, value) => Oracle_return (i2c_tick notif st') (TAKE nb' (word_to_bytes value F)))
         | SharedMem MappedWrite =>
             let
               value = word_of_bytes F 0w (TAKE addr_offset bytes)
             in
-              (case i2c_write st nb' (addr - region_start) value of
+              (case i2c_write st' nb' (addr - region_start) value of
                 INL outcome => Oracle_final outcome
-              | INR st' => Oracle_return st' [])
+                (* Register writes from software take priority over ones from software, so
+                 * applying `st_upd` after `i2c_tick` is correct. *)
+              | INR (st_upd, notif) => Oracle_return (st_upd (i2c_tick notif st')) [])
         | _ => Oracle_final FFI_failed
 End
 

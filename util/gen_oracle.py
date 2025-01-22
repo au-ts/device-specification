@@ -17,6 +17,9 @@ read_cases = []
 write_cases = []
 reg_records = []
 reg_decls = []
+read_notif_regs = []
+write_notif_regs = []
+hwext_write_notifs = []
 
 for i, reg in enumerate(block.entries):
     # Assume we don't have to deal with any `MultiReg`s or `Window`s for now.
@@ -51,63 +54,64 @@ for i, reg in enumerate(block.entries):
                     value = f"{field_value} && ~({value})"
                 case other:
                     raise Exception(f"Unreachable: {other}")
-            if not reg.hwext:
-                field_updates.append(f"{field_name} := {value};")
+            field_updates.append(f"{field_name} := {value};")
 
-        if not reg.hwext:
-            field_decls.append(f"{field_name} : {field.bits.width()} word;")
+        field_decls.append(f"{field_name} : {field.bits.width()} word;")
 
     write_lets = []
-    if len(field_updates) != 0:
-        # Note: this tacks the write onto the end of the last clock edge.
-        write_lets.append(
-            f"""st = st with regs := st.regs with {reg_name} := st.regs.{reg_name} with <|
-              {"\n              ".join(field_updates)}
-            |>;"""
-        )
-    if any(field.hwqe for field in reg.fields):
-        # The hardware doesn't get notified that a register's been written until the
-        # cycle after it's already occured, so giving it the state where that's already
-        # happened makes sense.
-        #
-        # That also means that we don't have to pass in the new value, because it's
-        # already available in `st`.
-        #
-        # TODO: return the side effects instead of applying them here, and then pass
-        # them to `i2c_tick` to be applied. This is necessary so that we can pass the
-        # appropriate register values through to `i2c_core` when verifying the hardware,
-        # rather than having them potentially get overwritten here by the side effects.
-        #
-        # This is also currently wrong because we need to apply the rest of the clock
-        # cycle along with these side effects.
-        write_lets.append(f"st = {ip.name}_{reg_name}_written st;")
+    if len(field_updates) > 0 and (
+        not reg.hwext or any(field.hwqe for field in reg.fields)
+    ):
+        write_lets.append(f"""new_value = <|
+          {"\n          ".join(field_updates)}
+        |>;""")
 
-    width = ceil(reg.get_width() / 8)
-    if len(write_lets) > 0:
-        let = f"""
-          let
-            {"\n            ".join(write_lets)}
-          in
-            """
+    write_notif = "NONE"
+    buffered_write_notif = "NONE"
+    if any(field.hwqe for field in reg.fields):
+        # TODO: I don't think this works correctly in the case of ro + hwqe + hwext, but
+        # we don't care about that case anyway.
+        if reg.hwext:
+            hwext_write_notifs.append(f"{reg_name}_write {reg_name}_fields")
+            write_notif = f"SOME (Write ({reg_name}_write new_value))"
+        else:
+            write_notif_regs.append(reg_name)
+            buffered_write_notif = f"SOME {reg_name}_write"
+
+    if len(field_updates) > 0 and not reg.hwext:
+        # This gets tacked onto the end of a fresh `i2c_tick`, which always sets
+        # `buffered_notif` to NONE, so we shouldn't be overwriting anything here.
+        new_state = f"""st' with <|
+          regs := st'.regs with {reg_name} := new_value;
+          buffered_notif := {buffered_write_notif};
+        |>"""
     else:
-        let = " "
+        new_state = "st'"
+    write_lets.append(f"st_upd = \\st'. {new_state};")
+    width = ceil(reg.get_width() / 8)
     write_cases.append(
-        f"""{hex(reg.offset)} =>{let}if nb >= {width} then INR st else INL FFI_failed"""
+        f"""{hex(reg.offset)} =>
+      let
+        {"\n        ".join(write_lets)}
+      in
+        if nb >= {width} then INR (st_upd, {write_notif}) else INL FFI_failed"""
     )
 
     if any(field.hwre for field in reg.fields):
-        new_state = f"{ip.name}_{reg_name}_read st"
+        read_notif_regs.append(reg_name)
+        read_notif = f"SOME (Read {reg_name}_read)"
     else:
-        # If the hardware doesn't have a `re` signal, there's no way for it to tell
-        # whether a register's been read, and thus reading can't have any side effects.
-        new_state = "st"
+        read_notif = "NONE"
+
     if len(field_terms) == 0:
         field_terms.append("0w")
     read_cases.append(
-        f"{hex(reg.offset)} => INR ({new_state}, {' || '.join(field_terms)} : word32)"
+        f"{hex(reg.offset)} => INR ({read_notif}, {' || '.join(field_terms)} : word32)"
     )
 
-    if not reg.hwext:
+    # We still need this for hwext + hwqe values as the type of the new value to be
+    # included in the notification.
+    if not reg.hwext or any(field.hwqe for field in reg.fields):
         reg_records.append(f"""\
 Datatype:
   {reg_name}_fields = <|
@@ -115,6 +119,7 @@ Datatype:
   |>
 End""")
 
+    if not reg.hwext:
         reg_decls.append(f"{reg_name} : {reg_name}_fields;")
 
 # It isn't strictly a failure if we read/write an invalid address, so it'd be
@@ -139,6 +144,22 @@ Datatype:
   |>
 End
 
+Datatype:
+  {ip.name}_hwext_read_notif = {" | ".join(f"{reg}_read" for reg in read_notif_regs)}
+End
+
+Datatype:
+  {ip.name}_hwext_write_notif = {" | ".join(hwext_write_notifs)}
+End
+
+Datatype:
+  {ip.name}_hwext_notif = Read {ip.name}_hwext_read_notif | Write {ip.name}_hwext_write_notif
+End
+
+Datatype:
+  {ip.name}_notif = {" | ".join(f"{reg}_write" for reg in write_notif_regs)}
+End
+
 val _ = export_theory();
 """
 
@@ -150,21 +171,13 @@ open {ip.name}CoreTheory;
 val _ = new_theory("{ip.name}Mappings");
 
 Definition {ip.name}_read_def:
-  {ip.name}_read (st: {ip.name}_state) (nb: num) (offset: num) =
-    let
-      st = apply_fbits st
-    in
-      case offset of
-        {"\n      | ".join(read_cases)}
+  {ip.name}_read (st: {ip.name}_state) (nb: num) (offset: num) = case offset of
+    {"\n  | ".join(read_cases)}
 End
 
 Definition {ip.name}_write_def:
-  {ip.name}_write (st: {ip.name}_state) (nb: num) (offset: num) (value: word32) =
-    let
-      st = apply_fbits st
-    in
-      case offset of
-        {"\n      | ".join(write_cases)}
+  {ip.name}_write (st: {ip.name}_state) (nb: num) (offset: num) (value: word32) = case offset of
+    {"\n  | ".join(write_cases)}
 End
 
 val _ = export_theory();
