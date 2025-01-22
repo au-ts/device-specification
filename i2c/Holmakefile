@@ -1,0 +1,19 @@
+INCLUDES = $(CAKEMLDIR)/semantics/ffi
+
+all: $(DEFAULT_TARGETS)
+.PHONY: all
+
+# This isn't good enough to get Holmake to work properly without these files
+# already existing, unfortunately: Holmake relies on all the .sml files already
+# existing on startup so it can note down their dependencies, and so if it
+# generates these on the fly it doesn't realise that i2cMappingsTheory depends
+# on i2cCoreTheory.
+#
+# It is, however, good enough to automatically regenerate these files whenever
+# `gen_oracle.py` changes, and will also get Holmake to build successfully on
+# its second try if the files don't exist.
+i2cRegsScript.sml i2cMappingsScript.sml: ../util/gen_oracle.py
+	PYTHONPATH="$(shell bender -d $(CHESHIREDIR) path register_interface)/vendor/lowrisc_opentitan/util" \
+		python3 ../util/gen_oracle.py \
+		"$(shell bender -d $(CHESHIREDIR) path opentitan_peripherals)/src/i2c/data/i2c.hjson" \
+		i2cRegsScript.sml i2cMappingsScript.sml
