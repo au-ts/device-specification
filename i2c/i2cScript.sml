@@ -31,14 +31,18 @@ Definition i2c_oracle_def:
       addr = w2n addr_word;
       st' = apply_fbits st;
     in
-      if addr < region_start \/ addr >= region_end then
+      (* TODO: I'm pretty sure 64-bit reads get split up into two 32-bit reads, but no
+       * sane driver should be using 64-bit accesses on 32-bit registers anyway.
+       *
+       * If we do implement it, we should use `fnums` to reorder the reads
+       * non-deterministically (use each number as an index into the list of remaining
+       * options?), and use `apply_fbits` to simulate an arbitrary delay between
+       * reads. *)
+      if addr < region_start \/ addr >= region_end \/ nb' > 4 then
         Oracle_final FFI_failed
       else
         case s of
           SharedMem MappedRead =>
-            (* TODO: I'm pretty sure 64-bit reads get split up into two 32-bit reads. Use
-             * bits from `fbits` to reorder the reads non-deterministically, `i2c_read`
-             * should already use `fbits` to simulate an arbitrary delay between reads. *)
             (case i2c_read st' nb' (addr - region_start) of
               INL outcome => Oracle_final outcome
             | INR (notif, value) => Oracle_return (i2c_tick notif st') (TAKE nb' (word_to_bytes value F)))
