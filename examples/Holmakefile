@@ -1,0 +1,1 @@
+INCLUDES = $(CAKEMLDIR)/pancake/semantics $(CAKEMLDIR)/pancake/parser ../i2c

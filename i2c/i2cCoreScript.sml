@@ -20,15 +20,19 @@ Datatype:
      * Having a version of this for each peripheral is a bit silly, but should allow
      * proving theorems about each of them independently. *)
     fnums : num -> num;
-    regs: i2c_regs;
+    regs : i2c_regs;
     (* Although there can only be one regbus transaction per clock cycle, because
      * non-`hwext` transactions only issue notifications on the next clock cycle,
      * whereas `hwext` transactions issue notifications immediately, you can end up
      * with two notifications on the same clock cycle if you have a non-`hwext`
      * transaction immediately followed by a `hwext` transaction. *)
-    buffered_notif: i2c_notif option;
+    buffered_notif : i2c_notif option;
+
+    (* Maximum length: 64 *)
+    rx_fifo : word8 list;
   |>
 End
+
 
 (* Stubs *)
 Definition i2c_get_status_fmtfull_def:
@@ -36,7 +40,7 @@ Definition i2c_get_status_fmtfull_def:
 End
 
 Definition i2c_get_status_rxfull_def:
-  i2c_get_status_rxfull (st: i2c_state) = 0w : word1
+  i2c_get_status_rxfull (st: i2c_state) = if LENGTH st.rx_fifo >= 64 then 1w else 0w : word1
 End
 
 Definition i2c_get_status_fmtempty_def:
@@ -52,7 +56,7 @@ Definition i2c_get_status_targetidle_def:
 End
 
 Definition i2c_get_status_rxempty_def:
-  i2c_get_status_rxempty (st: i2c_state) = 0w : word1
+  i2c_get_status_rxempty (st: i2c_state) = if NULL st.rx_fifo then 1w else 0w : word1
 End
 
 Definition i2c_get_status_txfull_def:
@@ -72,7 +76,9 @@ Definition i2c_get_status_acqempty_def:
 End
 
 Definition i2c_get_rdata_rdata_def:
-  i2c_get_rdata_rdata (st: i2c_state) = 0w : word8
+  (* `OutputZeroIfEmpty` is set to 1, so we can rely on it always being 0 in that
+   * case rather than having to use `fnums`. *)
+  i2c_get_rdata_rdata (st: i2c_state) = if NULL st.rx_fifo then 0w else HD st.rx_fifo : word8
 End
 
 Definition i2c_get_fifo_status_fmtlvl_def:
@@ -84,7 +90,7 @@ Definition i2c_get_fifo_status_txlvl_def:
 End
 
 Definition i2c_get_fifo_status_rxlvl_def:
-  i2c_get_fifo_status_rxlvl (st: i2c_state) = 0w : word7
+  i2c_get_fifo_status_rxlvl (st: i2c_state) = n2w (LENGTH st.rx_fifo) : word7
 End
 
 Definition i2c_get_fifo_status_acqlvl_def:
@@ -108,35 +114,9 @@ Definition i2c_get_acqdata_signal_def:
 End
 
 
-Definition i2c_rdata_read_def:
-  i2c_rdata_read (st: i2c_state) = st
+Definition i2c_eat_fnum:
+  i2c_eat_fnum st = (st with fnums := st.fnums o SUC, st.fnums 0)
 End
-
-Definition i2c_acqdata_read_def:
-  i2c_acqdata_read (st: i2c_state) = st
-End
-
-
-Definition i2c_intr_test_written_def:
-  i2c_intr_test_written (st: i2c_state) = st
-End
-
-Definition i2c_alert_test_written_def:
-  i2c_alert_test_written (st: i2c_state) = st
-End
-
-Definition i2c_fdata_written_def:
-  i2c_fdata_written (st: i2c_state) = st
-End
-
-Definition i2c_fifo_ctrl_written_def:
-  i2c_fifo_ctrl_written (st: i2c_state) = st
-End
-
-Definition i2c_txdata_written_def:
-  i2c_txdata_written (st: i2c_state) = st
-End
-
 
 (* Simulates one clock cycle of the I2C core.
  *
@@ -148,21 +128,22 @@ End
 Definition i2c_tick_def:
   i2c_tick (hwext_notif: i2c_hwext_notif option) (st: i2c_state) =
     let
-      notif = st.buffered_notif;
-      st' = st with buffered_notif := NONE;
-    in
-      st'
-End
+      fnums = st.fnums;
 
-(* Simulates an unknown amount of time passing, using `st.fnums` to determine
- * the amount of time elapsed. *)
-Definition apply_fbits_def:
-  apply_fbits (st: i2c_state) =
-    let
-      ticks = st.fnums 0;
-      st' = st with fnums := st.fnums o SUC;
+      (* `Pass` is set to 0, which means that a value cannot be removed from the FIFO
+       * on the same clock cycle that it is inserted, and so this needs to go first so
+       * that it can't see any newly-inserted values. *)
+      rx_fifo' = if hwext_notif = SOME (Read rdata_read) /\ ~NULL st.rx_fifo then TL st.rx_fifo else st.rx_fifo;
+      (* The FIFO can't insert into a spot that was freed in the same clock cycle, so
+       * we need to use `st.rx_fifo` rather than `rx_fifo'`. *)
+      rx_fifo'' = if fnums 0 <> 0 /\ LENGTH st.rx_fifo < 64 then SNOC (n2w (fnums 1)) rx_fifo' else rx_fifo';
+      fnums = \n. fnums (n + 2);
     in
-      FUNPOW (i2c_tick NONE) ticks st'
+      <|
+        fnums := fnums;
+        buffered_notif := NONE;
+        rx_fifo := rx_fifo'';
+      |>
 End
 
 val _ = export_theory();

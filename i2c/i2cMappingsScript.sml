@@ -1,4 +1,5 @@
 open HolKernel Parse boolLib bossLib;
+open alignmentTheory;
 open ffiTheory;
 open i2cCoreTheory;
 
@@ -305,6 +306,11 @@ Definition i2c_write_def:
       in
         if nb >= 4 then INR (st_upd, NONE) else INL FFI_failed
   | _ => INL FFI_failed
+End
+
+Definition i2c_addrs_def:
+  (* TODO: I think sh_memaddrs is supposed to only contain word-aligned addresses (which is, rather counterintuitively, what byte_align does), but we should double-check. *)
+  i2c_addrs = {byte_align 0x0w; byte_align 0x4w; byte_align 0x8w; byte_align 0xcw; byte_align 0x10w; byte_align 0x14w; byte_align 0x18w; byte_align 0x1cw; byte_align 0x20w; byte_align 0x24w; byte_align 0x28w; byte_align 0x2cw; byte_align 0x30w; byte_align 0x34w; byte_align 0x38w; byte_align 0x3cw; byte_align 0x40w; byte_align 0x44w; byte_align 0x48w; byte_align 0x4cw; byte_align 0x50w; byte_align 0x54w}
 End
 
 val _ = export_theory();

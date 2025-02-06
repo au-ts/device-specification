@@ -1,0 +1,5 @@
+fun read_byte() {
+    var val = 0;
+    !ld8 val, 50343960;
+    return val;
+}

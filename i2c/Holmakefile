@@ -1,4 +1,4 @@
-INCLUDES = $(CAKEMLDIR)/semantics/ffi
+INCLUDES = ../common $(CAKEMLDIR)/semantics/ffi
 
 all: $(DEFAULT_TARGETS)
 .PHONY: all

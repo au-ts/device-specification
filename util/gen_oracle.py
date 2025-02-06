@@ -165,6 +165,7 @@ val _ = export_theory();
 
 oracle = f"""\
 open HolKernel Parse boolLib bossLib;
+open alignmentTheory;
 open ffiTheory;
 open {ip.name}CoreTheory;
 
@@ -178,6 +179,11 @@ End
 Definition {ip.name}_write_def:
   {ip.name}_write (st: {ip.name}_state) (nb: num) (offset: num) (value: word32) = case offset of
     {"\n  | ".join(write_cases)}
+End
+
+Definition {ip.name}_addrs_def:
+  (* TODO: I think sh_memaddrs is supposed to only contain word-aligned addresses (which is, rather counterintuitively, what byte_align does), but we should double-check. *)
+  {ip.name}_addrs = {{{"; ".join(f"byte_align {hex(reg.offset)}w" for reg in block.entries)}}}
 End
 
 val _ = export_theory();
