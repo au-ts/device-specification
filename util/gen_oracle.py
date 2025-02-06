@@ -38,7 +38,7 @@ for i, reg in enumerate(block.entries):
         get_fn = f"{ip.name}_get_{reg_name}_{field_name}"
         if field.swaccess.allows_read():
             if reg.hwext:
-                field_value = f"({get_fn} st)"
+                field_value = f"({get_fn} st: {field.bits.width()} word)"
             else:
                 field_value = f"st.regs.{reg_name}.{field_name}"
             field_terms.append(f"(w2w {field_value} << {field.bits.lsb})")

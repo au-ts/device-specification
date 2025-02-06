@@ -36,81 +36,81 @@ End
 
 (* Stubs *)
 Definition i2c_get_status_fmtfull_def:
-  i2c_get_status_fmtfull (st: i2c_state) = 0w : word1
+  i2c_get_status_fmtfull (st: i2c_state) = 0w
 End
 
 Definition i2c_get_status_rxfull_def:
-  i2c_get_status_rxfull (st: i2c_state) = if LENGTH st.rx_fifo >= 64 then 1w else 0w : word1
+  i2c_get_status_rxfull (st: i2c_state) = if LENGTH st.rx_fifo >= 64 then 1w else 0w
 End
 
 Definition i2c_get_status_fmtempty_def:
-  i2c_get_status_fmtempty (st: i2c_state) = 0w : word1
+  i2c_get_status_fmtempty (st: i2c_state) = 0w
 End
 
 Definition i2c_get_status_hostidle_def:
-  i2c_get_status_hostidle (st: i2c_state) = 0w : word1
+  i2c_get_status_hostidle (st: i2c_state) = 0w
 End
 
 Definition i2c_get_status_targetidle_def:
-  i2c_get_status_targetidle (st: i2c_state) = 0w : word1
+  i2c_get_status_targetidle (st: i2c_state) = 0w
 End
 
 Definition i2c_get_status_rxempty_def:
-  i2c_get_status_rxempty (st: i2c_state) = if NULL st.rx_fifo then 1w else 0w : word1
+  i2c_get_status_rxempty (st: i2c_state) = if NULL st.rx_fifo then 1w else 0w
 End
 
 Definition i2c_get_status_txfull_def:
-  i2c_get_status_txfull (st: i2c_state) = 0w : word1
+  i2c_get_status_txfull (st: i2c_state) = 0w
 End
 
 Definition i2c_get_status_acqfull_def:
-  i2c_get_status_acqfull (st: i2c_state) = 0w : word1
+  i2c_get_status_acqfull (st: i2c_state) = 0w
 End
 
 Definition i2c_get_status_txempty_def:
-  i2c_get_status_txempty (st: i2c_state) = 0w : word1
+  i2c_get_status_txempty (st: i2c_state) = 0w
 End
 
 Definition i2c_get_status_acqempty_def:
-  i2c_get_status_acqempty (st: i2c_state) = 0w : word1
+  i2c_get_status_acqempty (st: i2c_state) = 0w
 End
 
 Definition i2c_get_rdata_rdata_def:
   (* `OutputZeroIfEmpty` is set to 1, so we can rely on it always being 0 in that
    * case rather than having to use `fnums`. *)
-  i2c_get_rdata_rdata (st: i2c_state) = if NULL st.rx_fifo then 0w else HD st.rx_fifo : word8
+  i2c_get_rdata_rdata (st: i2c_state) = if NULL st.rx_fifo then 0w else HD st.rx_fifo
 End
 
 Definition i2c_get_fifo_status_fmtlvl_def:
-  i2c_get_fifo_status_fmtlvl (st: i2c_state) = 0w : word7
+  i2c_get_fifo_status_fmtlvl (st: i2c_state) = 0w
 End
 
 Definition i2c_get_fifo_status_txlvl_def:
-  i2c_get_fifo_status_txlvl (st: i2c_state) = 0w : word7
+  i2c_get_fifo_status_txlvl (st: i2c_state) = 0w
 End
 
 Definition i2c_get_fifo_status_rxlvl_def:
-  i2c_get_fifo_status_rxlvl (st: i2c_state) = n2w (LENGTH st.rx_fifo) : word7
+  i2c_get_fifo_status_rxlvl (st: i2c_state) = n2w (LENGTH st.rx_fifo)
 End
 
 Definition i2c_get_fifo_status_acqlvl_def:
-  i2c_get_fifo_status_acqlvl (st: i2c_state) = 0w : word7
+  i2c_get_fifo_status_acqlvl (st: i2c_state) = 0w
 End
 
 Definition i2c_get_val_scl_rx_def:
-  i2c_get_val_scl_rx (st: i2c_state) = 0w : word16
+  i2c_get_val_scl_rx (st: i2c_state) = 0w
 End
 
 Definition i2c_get_val_sda_rx_def:
-  i2c_get_val_sda_rx (st: i2c_state) = 0w : word16
+  i2c_get_val_sda_rx (st: i2c_state) = 0w
 End
 
 Definition i2c_get_acqdata_abyte_def:
-  i2c_get_acqdata_abyte (st: i2c_state) = 0w : word8
+  i2c_get_acqdata_abyte (st: i2c_state) = 0w
 End
 
 Definition i2c_get_acqdata_signal_def:
-  i2c_get_acqdata_signal (st: i2c_state) = 0w : word2
+  i2c_get_acqdata_signal (st: i2c_state) = 0w
 End
 
 
