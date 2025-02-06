@@ -42,44 +42,6 @@ Definition sh_mem_oracle_def:
       | _ => Oracle_final FFI_failed
 End
 
-(*
-Theorem sh_mem_oracle_length:
-  sh_mem_oracle (:'a) read write s st conf bytes = Oracle_return st' bytes'
-    /\ LENGTH bytes >= interp_nb (:'a) (w2n (HD conf))
-    ==> LENGTH bytes' = LENGTH bytes
-Proof
-  simp [sh_mem_oracle_def]
-  >> rpt TOP_CASE_TAC
-  >> strip_tac
-  >> qpat_x_assum ‘_ = bytes'’ (assume_tac o GSYM)
-  >- (simp [PAD_RIGHT, LENGTH_APPEND]
-      >> ‘LENGTH (TAKE (interp_nb (:'a) (w2n (HD conf))) (word_to_bytes (n2w r: 'a word) F)) <= interp_nb (:'a) (w2n (HD conf))’ by simp [LENGTH_TAKE_EQ]
-      >> simp [])
-  >- simp []
-QED
-
-Theorem sh_mem_oracle_read_length:
-  sh_mem_oracle (:'a) read write (SharedMem MappedRead) st [nb] (word_to_bytes (addr: 'a word) F) = Oracle_return st' bytes'
-  /\ dimindex (:'a) DIV 8 >= w2n nb
-  ==> LENGTH bytes' = LENGTH (word_to_bytes (addr: 'a word) F)
-Proof
-  strip_tac
-  >> irule sh_mem_oracle_length
-  >> first_x_assum $ irule_at Any
-  >> rw [interp_nb_def, word_to_bytes_length]
-QED
-
-Theorem sh_mem_oracle_read_word_length:
-  sh_mem_oracle (:'a) read write (SharedMem MappedRead) st [0w] (word_to_bytes (addr: 'a word) F) = Oracle_return st' bytes'
-  ==> LENGTH bytes' = LENGTH (word_to_bytes (addr: 'a word) F)
-Proof
-  strip_tac
-  >> irule sh_mem_oracle_read_length
-  >> first_x_assum $ irule_at Any
-  >> simp []
-QED
-*)
-
 Theorem sh_mem_oracle_read_Oracle_return:
   sh_mem_oracle (:'a) read write (SharedMem MappedRead) st [nb] (word_to_bytes (addr: 'a word) F) = Oracle_return st' bytes'
   /\ 8 <= dimindex (:'a)
