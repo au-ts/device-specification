@@ -6,15 +6,15 @@ open i2cCircuitStateTheory;
 val _ = new_theory "i2cCircuit";
 
 Definition i2c_reg_top_comb_1_def:
-  i2c_reg_top_comb_1 fext s s' = ^i2c_reg_top_comb_1_tm
+  i2c_reg_top_comb_1 (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) = ^i2c_reg_top_comb_1_tm
 End
 
 Definition i2c_reg_top_comb_2_def:
-  i2c_reg_top_comb_2 fext s s' = ^i2c_reg_top_comb_2_tm
+  i2c_reg_top_comb_2 (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) = ^i2c_reg_top_comb_2_tm
 End
 
 Definition i2c_reg_top_ff_def:
-  i2c_reg_top_ff fext s s' = ^i2c_reg_top_ff_tm
+  i2c_reg_top_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) = ^i2c_reg_top_ff_tm
 End
 
 val init_tm = add_x_inits ``
@@ -70,6 +70,7 @@ val verilogstr =
   |> rhs
   |> verilog_print "i2c_circuit";
 
-print verilogstr;
+val f = TextIO.openOut "i2c_circuit.sv";
+val _ = output (f, verilogstr);
 
 val _ = export_theory ();
