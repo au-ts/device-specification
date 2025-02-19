@@ -4,7 +4,7 @@ open wordsTheory;
 val _ = new_theory("i2cRegs");
 
 Datatype:
-  intr_state_fields = <|
+  i2c_intr_state_fields = <|
     fmt_threshold : 1 word;
     rx_threshold : 1 word;
     fmt_overflow : 1 word;
@@ -24,7 +24,7 @@ Datatype:
 End
 
 Datatype:
-  intr_enable_fields = <|
+  i2c_intr_enable_fields = <|
     fmt_threshold : 1 word;
     rx_threshold : 1 word;
     fmt_overflow : 1 word;
@@ -44,7 +44,7 @@ Datatype:
 End
 
 Datatype:
-  intr_test_fields = <|
+  i2c_intr_test_fields = <|
     fmt_threshold : 1 word;
     rx_threshold : 1 word;
     fmt_overflow : 1 word;
@@ -64,13 +64,13 @@ Datatype:
 End
 
 Datatype:
-  alert_test_fields = <|
+  i2c_alert_test_fields = <|
     fatal_fault : 1 word;
   |>
 End
 
 Datatype:
-  ctrl_fields = <|
+  i2c_ctrl_fields = <|
     enablehost : 1 word;
     enabletarget : 1 word;
     llpbk : 1 word;
@@ -78,7 +78,7 @@ Datatype:
 End
 
 Datatype:
-  fdata_fields = <|
+  i2c_fdata_fields = <|
     fbyte : 8 word;
     start : 1 word;
     stop : 1 word;
@@ -89,7 +89,7 @@ Datatype:
 End
 
 Datatype:
-  fifo_ctrl_fields = <|
+  i2c_fifo_ctrl_fields = <|
     rxrst : 1 word;
     fmtrst : 1 word;
     rxilvl : 3 word;
@@ -100,7 +100,7 @@ Datatype:
 End
 
 Datatype:
-  ovrd_fields = <|
+  i2c_ovrd_fields = <|
     txovrden : 1 word;
     sclval : 1 word;
     sdaval : 1 word;
@@ -108,49 +108,49 @@ Datatype:
 End
 
 Datatype:
-  timing0_fields = <|
+  i2c_timing0_fields = <|
     thigh : 16 word;
     tlow : 16 word;
   |>
 End
 
 Datatype:
-  timing1_fields = <|
+  i2c_timing1_fields = <|
     t_r : 16 word;
     t_f : 16 word;
   |>
 End
 
 Datatype:
-  timing2_fields = <|
+  i2c_timing2_fields = <|
     tsu_sta : 16 word;
     thd_sta : 16 word;
   |>
 End
 
 Datatype:
-  timing3_fields = <|
+  i2c_timing3_fields = <|
     tsu_dat : 16 word;
     thd_dat : 16 word;
   |>
 End
 
 Datatype:
-  timing4_fields = <|
+  i2c_timing4_fields = <|
     tsu_sto : 16 word;
     t_buf : 16 word;
   |>
 End
 
 Datatype:
-  timeout_ctrl_fields = <|
+  i2c_timeout_ctrl_fields = <|
     val : 31 word;
     en : 1 word;
   |>
 End
 
 Datatype:
-  target_id_fields = <|
+  i2c_target_id_fields = <|
     address0 : 7 word;
     mask0 : 7 word;
     address1 : 7 word;
@@ -159,34 +159,34 @@ Datatype:
 End
 
 Datatype:
-  txdata_fields = <|
+  i2c_txdata_fields = <|
     txdata : 8 word;
   |>
 End
 
 Datatype:
-  host_timeout_ctrl_fields = <|
+  i2c_host_timeout_ctrl_fields = <|
     host_timeout_ctrl : 32 word;
   |>
 End
 
 Datatype:
   i2c_regs = <|
-    intr_state : intr_state_fields;
-    intr_enable : intr_enable_fields;
-    ctrl : ctrl_fields;
-    fdata : fdata_fields;
-    fifo_ctrl : fifo_ctrl_fields;
-    ovrd : ovrd_fields;
-    timing0 : timing0_fields;
-    timing1 : timing1_fields;
-    timing2 : timing2_fields;
-    timing3 : timing3_fields;
-    timing4 : timing4_fields;
-    timeout_ctrl : timeout_ctrl_fields;
-    target_id : target_id_fields;
-    txdata : txdata_fields;
-    host_timeout_ctrl : host_timeout_ctrl_fields;
+    intr_state : i2c_intr_state_fields;
+    intr_enable : i2c_intr_enable_fields;
+    ctrl : i2c_ctrl_fields;
+    fdata : i2c_fdata_fields;
+    fifo_ctrl : i2c_fifo_ctrl_fields;
+    ovrd : i2c_ovrd_fields;
+    timing0 : i2c_timing0_fields;
+    timing1 : i2c_timing1_fields;
+    timing2 : i2c_timing2_fields;
+    timing3 : i2c_timing3_fields;
+    timing4 : i2c_timing4_fields;
+    timeout_ctrl : i2c_timeout_ctrl_fields;
+    target_id : i2c_target_id_fields;
+    txdata : i2c_txdata_fields;
+    host_timeout_ctrl : i2c_host_timeout_ctrl_fields;
   |>
 End
 
@@ -195,7 +195,7 @@ Datatype:
 End
 
 Datatype:
-  i2c_hwext_write_notif = intr_test_write intr_test_fields | alert_test_write alert_test_fields
+  i2c_hwext_write_notif = intr_test_write i2c_intr_test_fields | alert_test_write i2c_alert_test_fields
 End
 
 Datatype:

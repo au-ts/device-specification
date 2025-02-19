@@ -156,7 +156,7 @@ Proof
   simp [set_byte_def, word_slice_alt_lsl_w2w_2, word_slice_alt_word_slice_alt, MIN_COMM]
 QED
 
-Theorem lt_or_gt:
+Triviality lt_or_gt:
   (a: num) <> b ==> a < b \/ a > b
 Proof
   simp []

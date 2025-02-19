@@ -33,25 +33,25 @@ Definition i2c_read_def:
 End
 
 Definition i2c_write_def:
-  i2c_write (st: i2c_state) (nb: num) (offset: num) (value: word32) = case offset of
+  i2c_write (st: i2c_state) (nb: num) (offset: num) (wdata: word32) = case offset of
     0x0 =>
       let
         new_value = <|
-          fmt_threshold := st.regs.intr_state.fmt_threshold && ~(w2w ((0 -- 0) value));
-          rx_threshold := st.regs.intr_state.rx_threshold && ~(w2w ((1 -- 1) value));
-          fmt_overflow := st.regs.intr_state.fmt_overflow && ~(w2w ((2 -- 2) value));
-          rx_overflow := st.regs.intr_state.rx_overflow && ~(w2w ((3 -- 3) value));
-          nak := st.regs.intr_state.nak && ~(w2w ((4 -- 4) value));
-          scl_interference := st.regs.intr_state.scl_interference && ~(w2w ((5 -- 5) value));
-          sda_interference := st.regs.intr_state.sda_interference && ~(w2w ((6 -- 6) value));
-          stretch_timeout := st.regs.intr_state.stretch_timeout && ~(w2w ((7 -- 7) value));
-          sda_unstable := st.regs.intr_state.sda_unstable && ~(w2w ((8 -- 8) value));
-          cmd_complete := st.regs.intr_state.cmd_complete && ~(w2w ((9 -- 9) value));
-          tx_stretch := st.regs.intr_state.tx_stretch && ~(w2w ((10 -- 10) value));
-          tx_overflow := st.regs.intr_state.tx_overflow && ~(w2w ((11 -- 11) value));
-          acq_full := st.regs.intr_state.acq_full && ~(w2w ((12 -- 12) value));
-          unexp_stop := st.regs.intr_state.unexp_stop && ~(w2w ((13 -- 13) value));
-          host_timeout := st.regs.intr_state.host_timeout && ~(w2w ((14 -- 14) value));
+          fmt_threshold := st.regs.intr_state.fmt_threshold && ~((0 >< 0) wdata);
+          rx_threshold := st.regs.intr_state.rx_threshold && ~((1 >< 1) wdata);
+          fmt_overflow := st.regs.intr_state.fmt_overflow && ~((2 >< 2) wdata);
+          rx_overflow := st.regs.intr_state.rx_overflow && ~((3 >< 3) wdata);
+          nak := st.regs.intr_state.nak && ~((4 >< 4) wdata);
+          scl_interference := st.regs.intr_state.scl_interference && ~((5 >< 5) wdata);
+          sda_interference := st.regs.intr_state.sda_interference && ~((6 >< 6) wdata);
+          stretch_timeout := st.regs.intr_state.stretch_timeout && ~((7 >< 7) wdata);
+          sda_unstable := st.regs.intr_state.sda_unstable && ~((8 >< 8) wdata);
+          cmd_complete := st.regs.intr_state.cmd_complete && ~((9 >< 9) wdata);
+          tx_stretch := st.regs.intr_state.tx_stretch && ~((10 >< 10) wdata);
+          tx_overflow := st.regs.intr_state.tx_overflow && ~((11 >< 11) wdata);
+          acq_full := st.regs.intr_state.acq_full && ~((12 >< 12) wdata);
+          unexp_stop := st.regs.intr_state.unexp_stop && ~((13 >< 13) wdata);
+          host_timeout := st.regs.intr_state.host_timeout && ~((14 >< 14) wdata);
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with intr_state := new_value;
@@ -62,21 +62,21 @@ Definition i2c_write_def:
   | 0x4 =>
       let
         new_value = <|
-          fmt_threshold := w2w ((0 -- 0) value);
-          rx_threshold := w2w ((1 -- 1) value);
-          fmt_overflow := w2w ((2 -- 2) value);
-          rx_overflow := w2w ((3 -- 3) value);
-          nak := w2w ((4 -- 4) value);
-          scl_interference := w2w ((5 -- 5) value);
-          sda_interference := w2w ((6 -- 6) value);
-          stretch_timeout := w2w ((7 -- 7) value);
-          sda_unstable := w2w ((8 -- 8) value);
-          cmd_complete := w2w ((9 -- 9) value);
-          tx_stretch := w2w ((10 -- 10) value);
-          tx_overflow := w2w ((11 -- 11) value);
-          acq_full := w2w ((12 -- 12) value);
-          unexp_stop := w2w ((13 -- 13) value);
-          host_timeout := w2w ((14 -- 14) value);
+          fmt_threshold := (0 >< 0) wdata;
+          rx_threshold := (1 >< 1) wdata;
+          fmt_overflow := (2 >< 2) wdata;
+          rx_overflow := (3 >< 3) wdata;
+          nak := (4 >< 4) wdata;
+          scl_interference := (5 >< 5) wdata;
+          sda_interference := (6 >< 6) wdata;
+          stretch_timeout := (7 >< 7) wdata;
+          sda_unstable := (8 >< 8) wdata;
+          cmd_complete := (9 >< 9) wdata;
+          tx_stretch := (10 >< 10) wdata;
+          tx_overflow := (11 >< 11) wdata;
+          acq_full := (12 >< 12) wdata;
+          unexp_stop := (13 >< 13) wdata;
+          host_timeout := (14 >< 14) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with intr_enable := new_value;
@@ -87,21 +87,21 @@ Definition i2c_write_def:
   | 0x8 =>
       let
         new_value = <|
-          fmt_threshold := w2w ((0 -- 0) value);
-          rx_threshold := w2w ((1 -- 1) value);
-          fmt_overflow := w2w ((2 -- 2) value);
-          rx_overflow := w2w ((3 -- 3) value);
-          nak := w2w ((4 -- 4) value);
-          scl_interference := w2w ((5 -- 5) value);
-          sda_interference := w2w ((6 -- 6) value);
-          stretch_timeout := w2w ((7 -- 7) value);
-          sda_unstable := w2w ((8 -- 8) value);
-          cmd_complete := w2w ((9 -- 9) value);
-          tx_stretch := w2w ((10 -- 10) value);
-          tx_overflow := w2w ((11 -- 11) value);
-          acq_full := w2w ((12 -- 12) value);
-          unexp_stop := w2w ((13 -- 13) value);
-          host_timeout := w2w ((14 -- 14) value);
+          fmt_threshold := (0 >< 0) wdata;
+          rx_threshold := (1 >< 1) wdata;
+          fmt_overflow := (2 >< 2) wdata;
+          rx_overflow := (3 >< 3) wdata;
+          nak := (4 >< 4) wdata;
+          scl_interference := (5 >< 5) wdata;
+          sda_interference := (6 >< 6) wdata;
+          stretch_timeout := (7 >< 7) wdata;
+          sda_unstable := (8 >< 8) wdata;
+          cmd_complete := (9 >< 9) wdata;
+          tx_stretch := (10 >< 10) wdata;
+          tx_overflow := (11 >< 11) wdata;
+          acq_full := (12 >< 12) wdata;
+          unexp_stop := (13 >< 13) wdata;
+          host_timeout := (14 >< 14) wdata;
         |>;
         st_upd = \st'. st';
       in
@@ -109,7 +109,7 @@ Definition i2c_write_def:
   | 0xc =>
       let
         new_value = <|
-          fatal_fault := w2w ((0 -- 0) value);
+          fatal_fault := (0 >< 0) wdata;
         |>;
         st_upd = \st'. st';
       in
@@ -117,9 +117,9 @@ Definition i2c_write_def:
   | 0x10 =>
       let
         new_value = <|
-          enablehost := w2w ((0 -- 0) value);
-          enabletarget := w2w ((1 -- 1) value);
-          llpbk := w2w ((2 -- 2) value);
+          enablehost := (0 >< 0) wdata;
+          enabletarget := (1 >< 1) wdata;
+          llpbk := (2 >< 2) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with ctrl := new_value;
@@ -140,12 +140,12 @@ Definition i2c_write_def:
   | 0x1c =>
       let
         new_value = <|
-          fbyte := w2w ((7 -- 0) value);
-          start := w2w ((8 -- 8) value);
-          stop := w2w ((9 -- 9) value);
-          read := w2w ((10 -- 10) value);
-          rcont := w2w ((11 -- 11) value);
-          nakok := w2w ((12 -- 12) value);
+          fbyte := (7 >< 0) wdata;
+          start := (8 >< 8) wdata;
+          stop := (9 >< 9) wdata;
+          read := (10 >< 10) wdata;
+          rcont := (11 >< 11) wdata;
+          nakok := (12 >< 12) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with fdata := new_value;
@@ -156,12 +156,12 @@ Definition i2c_write_def:
   | 0x20 =>
       let
         new_value = <|
-          rxrst := w2w ((0 -- 0) value);
-          fmtrst := w2w ((1 -- 1) value);
-          rxilvl := w2w ((4 -- 2) value);
-          fmtilvl := w2w ((6 -- 5) value);
-          acqrst := w2w ((7 -- 7) value);
-          txrst := w2w ((8 -- 8) value);
+          rxrst := (0 >< 0) wdata;
+          fmtrst := (1 >< 1) wdata;
+          rxilvl := (4 >< 2) wdata;
+          fmtilvl := (6 >< 5) wdata;
+          acqrst := (7 >< 7) wdata;
+          txrst := (8 >< 8) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with fifo_ctrl := new_value;
@@ -177,9 +177,9 @@ Definition i2c_write_def:
   | 0x28 =>
       let
         new_value = <|
-          txovrden := w2w ((0 -- 0) value);
-          sclval := w2w ((1 -- 1) value);
-          sdaval := w2w ((2 -- 2) value);
+          txovrden := (0 >< 0) wdata;
+          sclval := (1 >< 1) wdata;
+          sdaval := (2 >< 2) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with ovrd := new_value;
@@ -195,8 +195,8 @@ Definition i2c_write_def:
   | 0x30 =>
       let
         new_value = <|
-          thigh := w2w ((15 -- 0) value);
-          tlow := w2w ((31 -- 16) value);
+          thigh := (15 >< 0) wdata;
+          tlow := (31 >< 16) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with timing0 := new_value;
@@ -207,8 +207,8 @@ Definition i2c_write_def:
   | 0x34 =>
       let
         new_value = <|
-          t_r := w2w ((15 -- 0) value);
-          t_f := w2w ((31 -- 16) value);
+          t_r := (15 >< 0) wdata;
+          t_f := (31 >< 16) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with timing1 := new_value;
@@ -219,8 +219,8 @@ Definition i2c_write_def:
   | 0x38 =>
       let
         new_value = <|
-          tsu_sta := w2w ((15 -- 0) value);
-          thd_sta := w2w ((31 -- 16) value);
+          tsu_sta := (15 >< 0) wdata;
+          thd_sta := (31 >< 16) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with timing2 := new_value;
@@ -231,8 +231,8 @@ Definition i2c_write_def:
   | 0x3c =>
       let
         new_value = <|
-          tsu_dat := w2w ((15 -- 0) value);
-          thd_dat := w2w ((31 -- 16) value);
+          tsu_dat := (15 >< 0) wdata;
+          thd_dat := (31 >< 16) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with timing3 := new_value;
@@ -243,8 +243,8 @@ Definition i2c_write_def:
   | 0x40 =>
       let
         new_value = <|
-          tsu_sto := w2w ((15 -- 0) value);
-          t_buf := w2w ((31 -- 16) value);
+          tsu_sto := (15 >< 0) wdata;
+          t_buf := (31 >< 16) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with timing4 := new_value;
@@ -255,8 +255,8 @@ Definition i2c_write_def:
   | 0x44 =>
       let
         new_value = <|
-          val := w2w ((30 -- 0) value);
-          en := w2w ((31 -- 31) value);
+          val := (30 >< 0) wdata;
+          en := (31 >< 31) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with timeout_ctrl := new_value;
@@ -267,10 +267,10 @@ Definition i2c_write_def:
   | 0x48 =>
       let
         new_value = <|
-          address0 := w2w ((6 -- 0) value);
-          mask0 := w2w ((13 -- 7) value);
-          address1 := w2w ((20 -- 14) value);
-          mask1 := w2w ((27 -- 21) value);
+          address0 := (6 >< 0) wdata;
+          mask0 := (13 >< 7) wdata;
+          address1 := (20 >< 14) wdata;
+          mask1 := (27 >< 21) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with target_id := new_value;
@@ -286,7 +286,7 @@ Definition i2c_write_def:
   | 0x50 =>
       let
         new_value = <|
-          txdata := w2w ((7 -- 0) value);
+          txdata := (7 >< 0) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with txdata := new_value;
@@ -297,7 +297,7 @@ Definition i2c_write_def:
   | 0x54 =>
       let
         new_value = <|
-          host_timeout_ctrl := w2w ((31 -- 0) value);
+          host_timeout_ctrl := (31 >< 0) wdata;
         |>;
         st_upd = \st'. st' with <|
           regs := st'.regs with host_timeout_ctrl := new_value;
