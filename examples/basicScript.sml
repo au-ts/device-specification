@@ -3,12 +3,31 @@ open dep_rewrite;
 open alignmentTheory arithmeticTheory bitTheory dividesTheory finite_mapTheory listTheory wordsTheory;
 open wordsLib;
 open ffiTheory panLangTheory panPropsTheory panSemTheory;
-(* panHoareLib is just for `parse_pancake_file`. *)
-(* panPtreeConversionTheory is a dependency of panHoareLib that isn't getting picked up properly. *)
-open panPtreeConversionTheory panHoareLib;
 open cheshireOracleTheory i2cTheory i2cCoreTheory i2cMappingsTheory sharedMemoryOracleTheory;
 
 val _ = new_theory "basic";
+
+(* Copied from panHoareLib *)
+fun read_file fname = let
+    val s = TextIO.openIn fname
+    fun get ss = case TextIO.inputLine s of
+        SOME str => get (str :: ss)
+      | NONE => rev ss
+  in concat (get []) end
+
+fun parse_pancake_code str =
+  let
+    val parse_funs_to_ast64 = inst [alpha |-> ``: 64``] ``parse_funs_to_ast``
+    val thm = EVAL (mk_comb (parse_funs_to_ast64, stringLib.fromMLstring str))
+    val r = rhs (concl thm)
+  in
+    if sumSyntax.is_inl r
+    then (fst (sumSyntax.dest_inl r), thm)
+    else failwith ("parse_pancake_code: failed to EVAL")
+  end
+
+fun parse_pancake_file fname =
+  parse_pancake_code (read_file fname)
 
 val (ast, _) = parse_pancake_file "basic.pnk";
 
