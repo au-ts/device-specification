@@ -2,7 +2,7 @@ open HolKernel Parse boolLib bossLib;
 open dep_rewrite;
 open alignmentTheory arithmeticTheory bitTheory dividesTheory finite_mapTheory listTheory wordsTheory;
 open wordsLib;
-open ffiTheory panLangTheory panPropsTheory panSemTheory;
+open ffiTheory panLangTheory panPropsTheory panPtreeConversionTheory panSemTheory;
 open cheshireOracleTheory i2cTheory i2cCoreTheory i2cMappingsTheory sharedMemoryOracleTheory;
 
 val _ = new_theory "basic";
