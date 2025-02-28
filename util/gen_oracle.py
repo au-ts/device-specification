@@ -17,6 +17,7 @@ assert ip.regwidth == 32
 (block,) = ip.reg_blocks.values()
 
 # TODO: use bool for single-bit registers instead of word1
+# TODO: for all the builtin targets, reggen uses a proper templating system, maybe we should do that instead?
 
 
 def name(x):
@@ -339,6 +340,7 @@ val _ = export_theory ();
 
 
 def reg_top_field_hwext_qe_re_assns(reg: Register, field: Field):
+    # TODO: this is probably wrong for ro fields with hwqe/hwre set.
     assns = []
     if field.hwqe:
         # word_bit 1 s'.reg_rsp_o is reg_rsp_o.error.
@@ -360,13 +362,18 @@ def reg_top_reg_hwext_qe_re_assns(reg: Register):
     )
 
 
-def reg_top_field_hwext_q_assn(reg: Register, field: Field):
-    return f"""{name(field)}_q := s'.hw2reg.{name(reg)}.{name(field)}_d;"""
+def reg_top_field_hwext_q_assn(field: Field):
+    if field.swaccess.allows_write():
+        return (
+            f"""{name(field)}_q := ({field.bits.msb} >< {field.bits.lsb}) s'.wdata;"""
+        )
+    else:
+        return f"""{name(field)}_q := 0w;"""
 
 
 def reg_top_reg_hwext_q_assns(reg: Register):
     return (
-        f"{name(reg)} := s'.reg2hw.{name(reg)} with {reg_top_field_hwext_q_assn(reg, field)}"
+        f"{name(reg)} := s'.reg2hw.{name(reg)} with {reg_top_field_hwext_q_assn(field)}"
         for field in reg.fields
     )
 
@@ -383,6 +390,7 @@ def reg_top_reg_q_assns(reg: Register):
 
 
 def reg_top_field_qe_assn(reg: Register, field: Field):
+    # TODO: this is probably wrong for ro fields with hwqe set.
     return rf"""{name(field)}_qe := (s'.addr = {hex(reg.offset)}w /\ s'.valid /\ s'.write /\ ~(word_bit 1 s'.reg_rsp_o));"""
 
 
@@ -418,9 +426,9 @@ def reg_top_error_case(reg: Register):
 
 
 def reg_init(reg: Register):
-    # We leave add_x_inits to deal with fields that have `resval = None` (meaning `'x`).
+    # The documentation for `resval` is wrong: fields with a `resval` of None are always reset to 0, not `'x`'.
     return f"""<|
-      {"\n      ".join(f"{name(field)} := {field.resval}w;" for field in reg.fields if field.resval is not None)}
+      {"\n      ".join(f"{name(field)} := {field.resval or 0}w;" for field in reg.fields)}
     |>"""
 
 
@@ -454,7 +462,8 @@ open {ip.name}CircuitStateTheory {ip.name}RegsTheory {ip.name}RegsCommTheory;
  * let `i2cCircuitTheory` make the actual definitions. *)
 val {ip.name}_reg_top_comb_1_tm = ``
   let
-    s' = s' with addr := (69 >< 38) fext.reg_req_i;
+    (* Only the bottom 7 bits of the address are used. *)
+    s' = s' with addr := (44 >< 38) fext.reg_req_i;
     s' = s' with write := word_bit 37 fext.reg_req_i;
     s' = s' with wdata := (36 >< 5) fext.reg_req_i;
     s' = s' with wstrb := (4 >< 1) fext.reg_req_i;
@@ -472,11 +481,6 @@ val {ip.name}_reg_top_comb_1_tm = ``
     s'
 ``
 
-(* TODO: if we ever run into a situation where the `q` signal of a hwext
- * register is being read from by i2c_core, we'll need to add another one of
- * these that runs in between `d` being set and `q` being read. But there
- * doesn't seem to be anything like that right now, and I don't see why there
- * would be. *)
 val {ip.name}_reg_top_comb_2_tm = ``
   let
     s' = case s'.addr of
@@ -488,7 +492,7 @@ val {ip.name}_reg_top_comb_2_tm = ``
       {"\n    | ".join(f"{hex(reg.offset)}w => s' with reg_rsp_o := bit_field_insert 33 2 ({reg_value(reg, hw_field_value)}: word32) s'.reg_rsp_o" for reg in block.entries)}
     | _ => s' with reg_rsp_o := bit_field_insert 33 2 (0xffffffffw: word32) s'.reg_rsp_o;
 
-    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_hwext_q_assns(reg) if reg.hwext and reg.hwaccess.allows_read() and reg.hwaccess.allows_write())}
+    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_hwext_q_assns(reg) if reg.hwext and reg.hwaccess.allows_read())}
   in
     s'
 ``
@@ -504,7 +508,7 @@ val {ip.name}_reg_top_ff_tm = ``
 
 val {ip.name}_regs_init_tm = ``
   (<|
-    {"\n    ".join(f"{name(reg)} := {reg_init(reg)};" for reg in block.entries if not reg.hwext and any(field.resval is not None for field in reg.fields))}
+    {"\n    ".join(f"{name(reg)} := {reg_init(reg)};" for reg in block.entries if not reg.hwext)}
   |>): i2c_regs
 ``;
 

@@ -5,8 +5,8 @@ val _ = new_theory "i2cCircuitState";
 
 Datatype:
   i2c_circuit_ext_state = <|
-    (* 32-bit(?) addr + 32-bit data + 4-bit strobe + 2 bits of write/valid *)
-    reg_req_i: 70 word;
+    (* 48-bit (DefaultCfg.AddrWidth) addr + 32-bit data + 4-bit strobe + 2 bits of write/valid *)
+    reg_req_i: 86 word;
 
     cio_scl_i: bool;
     cio_sda_i: bool;
@@ -52,7 +52,7 @@ Datatype:
     hw2reg: i2c_hw2reg;
 
     (* The decoded fields of `reg_req_i`. *)
-    addr: word32;
+    addr: word7;
     write: bool;
     wdata: word32;
     wstrb: word4;

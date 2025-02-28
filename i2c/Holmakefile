@@ -3,17 +3,39 @@ INCLUDES = ../common $(CAKEMLDIR)/semantics/ffi $(HARDWAREDIR)/verilog $(HARDWAR
 all: $(DEFAULT_TARGETS)
 .PHONY: all
 
-# This isn't good enough to get Holmake to work properly without these files
-# already existing, unfortunately: Holmake relies on all the .sml files already
-# existing on startup so it can note down their dependencies, and so if it
-# generates these on the fly it doesn't realise that i2cMappingsTheory depends
-# on i2cCoreTheory.
-#
-# It is, however, good enough to automatically regenerate these files whenever
-# `gen_oracle.py` changes, and will also get Holmake to build successfully on
-# its second try if the files don't exist.
+REGISTER_INTERFACE = $(shell bender -d $(CHESHIREDIR) path register_interface)
+OPENTITAN_PERIPHERALS = $(shell bender -d $(CHESHIREDIR) path opentitan_peripherals)
+
+CHESHIRE_INCDIRS = $(shell bender -d $(CHESHIREDIR) script template_json | jq -r .all_incdirs.[])
+CHESHIRE_INC = $(patsubst %, -I%, $(CHESHIRE_INCDIRS))
+
 i2cRegsScript.sml i2cMappingsScript.sml i2cRegsCommScript.sml i2cRegsCircuitLib.sml: ../util/gen_oracle.py
-	PYTHONPATH="$(shell bender -d $(CHESHIREDIR) path register_interface)/vendor/lowrisc_opentitan/util" \
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:$PYTHONPATH" \
 		python3 ../util/gen_oracle.py \
-		"$(shell bender -d $(CHESHIREDIR) path opentitan_peripherals)/src/i2c/data/i2c.hjson" \
+		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
 		i2cRegsScript.sml i2cMappingsScript.sml i2cRegsCommScript.sml i2cRegsCircuitLib.sml
+
+i2cMappingsTheory.uo: i2cCoreTheory.uo
+i2cRegsCircuitLib.uo: i2cCircuitStateTheory.uo i2cRegsTheory.uo i2cRegsCommTheory.uo
+
+i2c_circuit_eqy.sv: i2cCircuitTheory.uo ../util/eqy_prepare.py
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:$PYTHONPATH" \
+		python3 ../util/eqy_prepare.py \
+		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
+		< i2c_circuit.sv > i2c_circuit_eqy.sv
+
+i2c_circuit_eqy.v: i2c_circuit_eqy.sv
+	sv2v i2c_circuit_eqy.sv $(OPENTITAN_PERIPHERALS)/src/i2c/rtl/i2c_reg_pkg.sv --write=i2c_circuit_eqy.v
+
+i2c_reg_top.v: i2c_reg_top_wrapper.sv
+	sv2v \
+	    $(CHESHIRE_INC) \
+		$(OPENTITAN_PERIPHERALS)/src/i2c/rtl/i2c_reg_*.sv \
+		$(REGISTER_INTERFACE)/{src/reg_intf.sv,vendor/lowrisc_opentitan/src/*.sv} \
+		i2c_reg_top_wrapper.sv \
+		--write=i2c_reg_top.v --top=i2c_reg_top_wrapper
+
+.PHONY: eqy
+eqy: i2c_circuit_eqy.v i2c_reg_top.v
+	rm -rf i2c_reg_top
+	eqy i2c_reg_top.eqy

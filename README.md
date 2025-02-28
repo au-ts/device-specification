@@ -36,5 +36,10 @@ Intended proof chain:
 - `examples/basic.pnk`: An _extremely_ simple Pancake program which performs a single read from one of Cheshire I2C's registers.
 - `examples/basicScript.sml`: An example verification of `basic.pnk`, to test that my model can be successfully connected with Pancake's semantics.
 
-- `i2c/i2cCircuitStateScript.sml`: defines the state for the HOL version of Cheshire I2C, so that it can be used by `i2cRegsCircuitLib`.
-- `i2c/i2cCircuitScript.sml`: defines the top-level module for the HOL version of Cheshire I2C, currently a stub which just includes `i2c_reg_top`.
+- `i2c/i2cCircuitStateScript.sml`: Defines the state for the HOL version of Cheshire I2C, so that it can be used by `i2cRegsCircuitLib`.
+- `i2c/i2cCircuitScript.sml`: Defines the top-level module for the HOL version of Cheshire I2C, currently a stub which just includes `i2c_reg_top`.
+
+- `i2c/i2c_reg_top.eqy`: `eqy` configuration for equivalence-checking the translated version of `i2c_reg_top` against the real one.
+  - This will probably be removed once the HOL version of the rest of the circuit is done, since then we can equivalence-check it all at once and don't need to deal with hacks like `eqy_prepare`.
+- `util/eqy_prepare.py`: The translated version of `i2c_reg_top` is actually the full I2C core, but with only the `always` blocks for `i2c_reg_top` included. So, this script is needed to change the port declaration to that of `i2c_reg_top`, and change `reg2hw` and `hw2reg` from local variables into ports.
+- `util/i2c_reg_top_wrapper.sv`: A wrapper around `i2c_reg_top` which instantiates `reg_req_t` and `reg_rsp_t`, as well as fixing `devmode_i` to 1.

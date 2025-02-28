@@ -68,7 +68,7 @@ val verilogstr =
   |> REWRITE_RULE [definition "i2c_circuit_v_seqs_def", definition "i2c_circuit_v_combs_def", definition "i2c_circuit_v_decls_def"]
   |> concl
   |> rhs
-  |> verilog_print "i2c_circuit";
+  |> verilog_print "i2c_circuit" "clk_i" (SOME "rst_ni");
 
 val f = TextIO.openOut "i2c_circuit.sv";
 val _ = output (f, verilogstr);

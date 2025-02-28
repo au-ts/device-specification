@@ -1,0 +1,22 @@
+[gold]
+read_verilog i2c_reg_top.v
+prep -top i2c_reg_top_wrapper
+
+[gate]
+read_verilog i2c_circuit_eqy.v
+prep -top i2c_reg_top_wrapper
+
+[script]
+uniquify
+sim -w -vcd reset.vcd -clock clk_i -resetn rst_ni -rstlen 2 -n 1
+
+[strategy sby]
+use sby
+depth 1
+# bitwuzla seems to be the most common, but yosys expects an ancient version I
+# can't be bothered to get working.
+engine smtbmc yices
+
+[collect *]
+# https://github.com/YosysHQ/eqy/issues/47
+join reg2hw
