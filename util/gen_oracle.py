@@ -476,25 +476,22 @@ val {ip.name}_reg_top_comb_1_tm = ``
 
     {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_q_assns(reg) if not reg.hwext and reg.hwaccess.allows_read())}
 
+    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_hwext_q_assns(reg) if reg.hwext and reg.hwaccess.allows_read())}
+
     {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_hwext_qe_re_assns(reg) if reg.hwext and (reg.hwqe or reg.hwre))}
   in
     s'
 ``
 
 val {ip.name}_reg_top_comb_2_tm = ``
-  let
-    s' = case s'.addr of
-      (* TODO: this won't produce the prettiest Verilog. To do that, we'd need to turn
-       * this into a let..in with an assignment for each field of the register, but
-       * that would make sharing code with the HOL version more annoying.
-       *
-       * Alternatively, using @@ would be a lot less ugly than this. *)
-      {"\n    | ".join(f"{hex(reg.offset)}w => s' with reg_rsp_o := bit_field_insert 33 2 ({reg_value(reg, hw_field_value)}: word32) s'.reg_rsp_o" for reg in block.entries)}
-    | _ => s' with reg_rsp_o := bit_field_insert 33 2 (0xffffffffw: word32) s'.reg_rsp_o;
-
-    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_hwext_q_assns(reg) if reg.hwext and reg.hwaccess.allows_read())}
-  in
-    s'
+  case s'.addr of
+    (* TODO: this won't produce the prettiest Verilog. To do that, we'd need to turn
+     * this into a let..in with an assignment for each field of the register, but
+     * that would make sharing code with the HOL version more annoying.
+     *
+     * Alternatively, using @@ would be a lot less ugly than this. *)
+    {"\n  | ".join(f"{hex(reg.offset)}w => s' with reg_rsp_o := bit_field_insert 33 2 ({reg_value(reg, hw_field_value)}: word32) s'.reg_rsp_o" for reg in block.entries)}
+  | _ => s' with reg_rsp_o := bit_field_insert 33 2 (0xffffffffw: word32) s'.reg_rsp_o
 ``
 
 val {ip.name}_reg_top_ff_tm = ``
