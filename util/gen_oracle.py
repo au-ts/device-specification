@@ -177,21 +177,42 @@ def new_reg_value(
         |>"""
 
 
-read_cases = []
-write_cases = []
-reg_records = []
-reg_decls = []
-read_notif_regs = []
-write_notif_regs = []
-hwext_write_notifs = []
+def reg_record(reg: Register):
+    return f"""\
+Datatype:
+  {ip.name}_{name(reg)}_fields = <|
+    {"\n    ".join(f"{name(field)}: {field.bits.width()} word;" for field in reg.fields)}
+  |>
+End"""
 
-for reg in block.entries:
-    # Assume we don't have to deal with any `MultiReg`s or `Window`s for now.
-    assert isinstance(reg, Register)
 
-    field_decls = [
-        f"{name(field)} : {field.bits.width()} word;" for field in reg.fields
-    ]
+def regs_record():
+    return f"""\
+Datatype:
+  {ip.name}_regs = <|
+    {"\n    ".join(f"{name(reg)}: {ip.name}_{name(reg)}_fields;" for reg in block.entries if not reg.hwext)}
+  |>
+End"""
+
+
+# We still need this for hwext + hwqe values as the type of the new value to be
+# included in the notification.
+reg_records = (
+    reg_record(reg)
+    for reg in block.entries
+    if not reg.hwext or any(field.hwqe for field in reg.fields)
+)
+
+
+def reg_read_case(reg: Register):
+    if any(field.hwre for field in reg.fields):
+        read_notif = f"SOME (Read {name(reg)}_read)"
+    else:
+        read_notif = "NONE"
+    return f"{hex(reg.offset)} => INR ({read_notif}, {reg_value(reg, oracle_field_value)} : word32)"
+
+
+def reg_write_case(reg: Register):
     writable = any(field.swaccess.allows_write() for field in reg.fields)
 
     write_lets = []
@@ -206,10 +227,8 @@ for reg in block.entries:
         # TODO: I don't think this works correctly in the case of ro + hwqe + hwext, but
         # we don't care about that case anyway.
         if reg.hwext:
-            hwext_write_notifs.append(f"{name(reg)}_write {ip.name}_{name(reg)}_fields")
             write_notif = f"SOME (Write ({name(reg)}_write new_value))"
         else:
-            write_notif_regs.append(name(reg))
             buffered_write_notif = f"SOME {name(reg)}_write"
 
     if writable and not reg.hwext:
@@ -223,36 +242,16 @@ for reg in block.entries:
         new_state = "st'"
     write_lets.append(f"st_upd = \\st'. {new_state};")
     width = ceil(reg.get_width() / 8)
-    write_cases.append(
-        f"""{hex(reg.offset)} =>
+
+    return f"""{hex(reg.offset)} =>
       let
         {"\n        ".join(write_lets)}
       in
         if nb >= {width} then INR (st_upd, {write_notif}) else INL FFI_failed"""
-    )
 
-    if any(field.hwre for field in reg.fields):
-        read_notif_regs.append(name(reg))
-        read_notif = f"SOME (Read {name(reg)}_read)"
-    else:
-        read_notif = "NONE"
 
-    read_cases.append(
-        f"{hex(reg.offset)} => INR ({read_notif}, {reg_value(reg, oracle_field_value)} : word32)"
-    )
-
-    # We still need this for hwext + hwqe values as the type of the new value to be
-    # included in the notification.
-    if not reg.hwext or any(field.hwqe for field in reg.fields):
-        reg_records.append(f"""\
-Datatype:
-  {ip.name}_{name(reg)}_fields = <|
-    {"\n    ".join(field_decls)}
-  |>
-End""")
-
-    if not reg.hwext:
-        reg_decls.append(f"{name(reg)} : {ip.name}_{name(reg)}_fields;")
+read_cases = [reg_read_case(reg) for reg in block.entries]
+write_cases = [reg_write_case(reg) for reg in block.entries]
 
 # It isn't strictly a failure if we read/write an invalid address, so it'd be
 # fine to loosen this to returning all 1s / doing nothing on read / write.
@@ -270,18 +269,14 @@ val _ = new_theory("{ip.name}Regs");
 
 {"\n\n".join(reg_records)}
 
+{regs_record()}
+
 Datatype:
-  {ip.name}_regs = <|
-    {"\n    ".join(reg_decls)}
-  |>
+  {ip.name}_hwext_read_notif = {" | ".join(f"{(name(reg))}_read" for reg in block.entries if any(field.hwre for field in reg.fields))}
 End
 
 Datatype:
-  {ip.name}_hwext_read_notif = {" | ".join(f"{reg}_read" for reg in read_notif_regs)}
-End
-
-Datatype:
-  {ip.name}_hwext_write_notif = {" | ".join(hwext_write_notifs)}
+  {ip.name}_hwext_write_notif = {" | ".join(f"{(name(reg))}_write {ip.name}_{name(reg)}_fields" for reg in block.entries if any(field.hwqe for field in reg.fields) and reg.hwext)}
 End
 
 Datatype:
@@ -289,7 +284,7 @@ Datatype:
 End
 
 Datatype:
-  {ip.name}_notif = {" | ".join(f"{reg}_write" for reg in write_notif_regs)}
+  {ip.name}_notif = {" | ".join(f"{name(reg)}_write" for reg in block.entries if any(field.hwqe for field in reg.fields) and not reg.hwext)}
 End
 
 val _ = export_theory();
