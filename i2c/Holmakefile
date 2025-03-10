@@ -9,11 +9,29 @@ OPENTITAN_PERIPHERALS = $(shell bender -d $(CHESHIREDIR) path opentitan_peripher
 CHESHIRE_INCDIRS = $(shell bender -d $(CHESHIREDIR) script template_json | jq -r .all_incdirs.[])
 CHESHIRE_INC = $(patsubst %, -I%, $(CHESHIRE_INCDIRS))
 
-i2cRegsScript.sml i2cMappingsScript.sml i2cRegsCommScript.sml i2cRegsCircuitLib.sml: ../util/gen_oracle.py
-	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:$PYTHONPATH" \
-		python3 ../util/gen_oracle.py \
+i2cRegsScript.sml: ../util/gen_regs.py ../util/common.py
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
+		python3 -m util.gen_regs \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
-		i2cRegsScript.sml i2cMappingsScript.sml i2cRegsCommScript.sml i2cRegsCircuitLib.sml
+		> i2cRegsScript.sml
+
+i2cMappingsScript.sml: ../util/gen_mappings.py ../util/common.py
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
+		python3 -m util.gen_mappings \
+		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
+		> i2cMappingsScript.sml
+
+i2cRegsCommScript.sml: ../util/gen_regs_comm.py ../util/common.py
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
+		python3 -m util.gen_regs_comm \
+		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
+		> i2cRegsCommScript.sml
+
+i2cRegsCircuitLib.sml: ../util/gen_regs_circuit.py ../util/common.py
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
+		python3 -m util.gen_regs_circuit \
+		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
+		> i2cRegsCircuitLib.sml
 
 i2cMappingsTheory.uo: i2cCoreTheory.uo
 i2cRegsCircuitLib.uo: i2cCircuitStateTheory.uo i2cRegsTheory.uo i2cRegsCommTheory.uo
