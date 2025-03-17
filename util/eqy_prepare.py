@@ -6,24 +6,7 @@
 import re
 import sys
 
-# Set PYTHONPATH=${register_interface}/vendor/lowrisc_opentitan/util for these
-# imports to work.
-from reggen.field import Field
-from reggen.ip_block import IpBlock
-from reggen.register import Register
-
-ip = IpBlock.from_path(sys.argv[1], [])
-# Currently we assume that registers are always 32-bit, so that we can store the
-# values being written/read in 32-bit integers.
-assert ip.regwidth == 32
-
-# Assume there's only 1 block for now.
-(block,) = ip.reg_blocks.values()
-
-
-def name(x):
-    return x.name.lower()
-
+from .common import block, ip, name
 
 input = sys.stdin.read()
 

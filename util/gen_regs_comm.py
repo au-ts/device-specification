@@ -1,8 +1,9 @@
 import itertools
 
 # Set PYTHONPATH=${register_interface}/vendor/lowrisc_opentitan/util for these imports to work.
-from reggen.register import Register
 from reggen.field import Field
+from reggen.register import Register
+from math import ceil
 
 from .common import block, ip, name
 
@@ -95,9 +96,43 @@ Datatype:
 End"""
 
 
+def req_error_case(reg: Register):
+    min_bytes = ceil(reg.get_width() / 8)
+    return rf"{hex(reg.offset)}w => req.write /\ (({min_bytes - 1} >< 0) req.wstrb: {min_bytes} word) <> {(1 << min_bytes) - 1}w"
+
+
+def req_error():
+    return f"""\
+Definition {ip.name}_req_error_def:
+  {ip.name}_req_error (req: 7 reg_req) <=>
+  req.valid /\\ case req.addr of
+    {"\n  | ".join(req_error_case(reg) for reg in block.entries)}
+  | _ => T
+End"""
+
+
+def field_notif_rel(reg: Register, field: Field):
+    return f"(reg2hw.{name(reg)}.{name(field)}_qe <=> notif = SOME {name(reg)}_write)"
+
+
+def reg_hwext_notif_rels(reg: Register):
+    result = []
+    if reg.hwqe:
+        result += [
+            rf"(!value. notif = SOME (Write ({name(reg)}_write value)) <=> req.addr = {hex(reg.offset)}w /\ req.valid /\ req.write /\ {ip.name}_{name(reg)}_decode_write req.wdata = value)"
+        ]
+    if reg.hwre:
+        result += [
+            rf"(notif = SOME (Read {name(reg)}_read) <=> req.addr = {hex(reg.offset)}w /\ req.valid /\ ~req.write)"
+        ]
+    return result
+
+
 regs_comm = f"""\
 open HolKernel Parse boolLib bossLib;
 open wordsTheory;
+open wordsLib;
+open cheshireCircuitTheory i2cRegsTheory;
 
 val _ = new_theory "{ip.name}RegsComm";
 
@@ -108,6 +143,19 @@ val _ = new_theory "{ip.name}RegsComm";
 {"\n\n".join(reg_hw2reg_def(reg) for reg in block.entries if reg_needs_hw2reg(reg))}
 
 {hw2reg_def()}
+
+Definition {ip.name}_notif_rel_def:
+  {ip.name}_notif_rel (notif: {ip.name}_notif option) (reg2hw: {ip.name}_reg2hw) <=>
+  {" /\\\n  ".join(field_notif_rel(reg, field) for reg in block.entries for field in reg.fields if field.hwqe and not reg.hwext)}
+End
+
+{req_error()}
+
+Definition {ip.name}_hwext_notif_rel_def:
+  {ip.name}_hwext_notif_rel (notif: {ip.name}_hwext_notif option) (req: 7 reg_req) <=>
+    ~{ip.name}_req_error req /\\
+    {" /\\\n    ".join(term for reg in block.entries for term in reg_hwext_notif_rels(reg) if reg.hwext)}
+End
 
 val _ = export_theory ();
 """

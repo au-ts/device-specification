@@ -1,8 +1,7 @@
 from math import ceil
 
-from reggen.field import Field
-
 # Set PYTHONPATH=${register_interface}/vendor/lowrisc_opentitan/util for these imports to work.
+from reggen.field import Field
 from reggen.register import Register
 
 from .common import block, ip, name, new_field_value, reg_value

@@ -4,7 +4,7 @@ from math import ceil
 from reggen.field import Field
 from reggen.register import Register
 
-from .common import block, ip, name, new_reg_value, reg_value
+from .common import block, ip, name, new_field_value, reg_value
 
 
 def oracle_field_value(reg: Register, field: Field):
@@ -27,37 +27,37 @@ def reg_read_case(reg: Register):
 def reg_write_case(reg: Register):
     writable = any(field.swaccess.allows_write() for field in reg.fields)
 
-    write_lets = []
-    if writable and (not reg.hwext or any(field.hwqe for field in reg.fields)):
-        write_lets.append(
-            f"""new_value = {new_reg_value(reg, "wdata", oracle_field_value)};"""
-        )
-
     write_notif = "NONE"
     buffered_write_notif = "NONE"
     if any(field.hwqe for field in reg.fields):
         # TODO: I don't think this works correctly in the case of ro + hwqe + hwext, but
         # we don't care about that case anyway.
         if reg.hwext:
-            write_notif = f"SOME (Write ({name(reg)}_write new_value))"
+            write_notif = f"SOME (Write ({name(reg)}_write ({ip.name}_{name(reg)}_decode_write wdata)))"
         else:
             buffered_write_notif = f"SOME {name(reg)}_write"
 
     if writable and not reg.hwext:
+        field_updates = (
+            f"{name(field)} := {new_field_value(reg, field, 'wdata', oracle_field_value)};"
+            for field in reg.fields
+            if field.swaccess.allows_write()
+        )
         # This gets tacked onto the end of a fresh `i2c_tick`, which always sets
         # `buffered_notif` to NONE, so we shouldn't be overwriting anything here.
         new_state = f"""st' with <|
-          regs := st'.regs with {name(reg)} := new_value;
+          regs := st'.regs with {name(reg)} := st'.regs.{name(reg)} with <|
+            {"\n            ".join(field_updates)}
+          |>;
           buffered_notif := {buffered_write_notif};
         |>"""
     else:
         new_state = "st'"
-    write_lets.append(f"st_upd = \\st'. {new_state};")
     width = ceil(reg.get_width() / 8)
 
     return f"""{hex(reg.offset)} =>
       let
-        {"\n        ".join(write_lets)}
+        st_upd = \\st'. {new_state};
       in
         if nb >= {width} then INR (st_upd, {write_notif}) else INL FFI_failed"""
 

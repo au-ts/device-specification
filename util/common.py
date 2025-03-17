@@ -24,7 +24,6 @@ def name(x):
     return x.name.lower()
 
 
-# TODO: replace all this with `encode`/`decode` functions in HOL
 def reg_value(reg: Register, field_value: Callable[[Register, Field], str]):
     field_terms = [
         f"(w2w {field_value(reg, field)} <<~ {field.bits.lsb}w)"
@@ -48,20 +47,9 @@ def new_field_value(
             pass
         case "rw1c":
             if not reg.hwext:
+                # Note: this is only correct because if the swaccess is rw1c, the field has to
+                # be readable.
                 value = f"{field_value(reg, field)} && ~({value})"
         case other:
             raise Exception(f"Unsupported or non-writable swaccess: {other}")
     return value
-
-
-def new_reg_value(
-    reg: Register, wdata: str, field_value: Callable[[Register, Field], str]
-):
-    field_updates = [
-        f"{name(field)} := {new_field_value(reg, field, wdata, field_value)};"
-        for field in reg.fields
-        if field.swaccess.allows_write()
-    ]
-    return f"""<|
-          {"\n          ".join(field_updates)}
-        |>"""

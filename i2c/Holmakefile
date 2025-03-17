@@ -34,8 +34,8 @@ i2cRegsCircuitLib.sml: ../util/gen_regs_circuit.py ../util/common.py
 		> i2cRegsCircuitLib.sml
 
 i2c_circuit_eqy.sv: i2cCircuitTheory.uo ../util/eqy_prepare.py
-	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:$PYTHONPATH" \
-		python3 ../util/eqy_prepare.py \
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
+		python3 -m util.eqy_prepare \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
 		< i2c_circuit.sv > i2c_circuit_eqy.sv
 

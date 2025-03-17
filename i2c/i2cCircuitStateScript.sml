@@ -1,5 +1,5 @@
 open HolKernel Parse boolLib bossLib;
-open i2cRegsTheory i2cRegsCommTheory;
+open i2cCoreTheory i2cRegsTheory i2cRegsCommTheory;
 
 val _ = new_theory "i2cCircuitState";
 
@@ -58,6 +58,18 @@ Datatype:
     wstrb: word4;
     valid: bool;
   |>
+End
+
+Definition i2c_core_state_rel_def:
+  (* mstate = model state, cstate = circuit state *)
+  i2c_core_state_rel (mstate: i2c_state) (cstate: i2c_circuit_state) = T
+End
+
+Definition i2c_state_rel_def:
+  i2c_state_rel (mstate: i2c_state) (cstate: i2c_circuit_state) <=>
+    mstate.regs = cstate.regs /\
+    i2c_notif_rel mstate.buffered_notif cstate.reg2hw /\
+    i2c_core_state_rel mstate cstate
 End
 
 val _ = export_theory ();

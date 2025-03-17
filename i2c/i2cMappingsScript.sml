@@ -36,93 +36,70 @@ Definition i2c_write_def:
   i2c_write (st: i2c_state) (nb: num) (offset: num) (wdata: word32) = case offset of
     0x0 =>
       let
-        new_value = <|
-          fmt_threshold := st.regs.intr_state.fmt_threshold && ~((0 >< 0) wdata);
-          rx_threshold := st.regs.intr_state.rx_threshold && ~((1 >< 1) wdata);
-          fmt_overflow := st.regs.intr_state.fmt_overflow && ~((2 >< 2) wdata);
-          rx_overflow := st.regs.intr_state.rx_overflow && ~((3 >< 3) wdata);
-          nak := st.regs.intr_state.nak && ~((4 >< 4) wdata);
-          scl_interference := st.regs.intr_state.scl_interference && ~((5 >< 5) wdata);
-          sda_interference := st.regs.intr_state.sda_interference && ~((6 >< 6) wdata);
-          stretch_timeout := st.regs.intr_state.stretch_timeout && ~((7 >< 7) wdata);
-          sda_unstable := st.regs.intr_state.sda_unstable && ~((8 >< 8) wdata);
-          cmd_complete := st.regs.intr_state.cmd_complete && ~((9 >< 9) wdata);
-          tx_stretch := st.regs.intr_state.tx_stretch && ~((10 >< 10) wdata);
-          tx_overflow := st.regs.intr_state.tx_overflow && ~((11 >< 11) wdata);
-          acq_full := st.regs.intr_state.acq_full && ~((12 >< 12) wdata);
-          unexp_stop := st.regs.intr_state.unexp_stop && ~((13 >< 13) wdata);
-          host_timeout := st.regs.intr_state.host_timeout && ~((14 >< 14) wdata);
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with intr_state := new_value;
+          regs := st'.regs with intr_state := st'.regs.intr_state with <|
+            fmt_threshold := st.regs.intr_state.fmt_threshold && ~((0 >< 0) wdata);
+            rx_threshold := st.regs.intr_state.rx_threshold && ~((1 >< 1) wdata);
+            fmt_overflow := st.regs.intr_state.fmt_overflow && ~((2 >< 2) wdata);
+            rx_overflow := st.regs.intr_state.rx_overflow && ~((3 >< 3) wdata);
+            nak := st.regs.intr_state.nak && ~((4 >< 4) wdata);
+            scl_interference := st.regs.intr_state.scl_interference && ~((5 >< 5) wdata);
+            sda_interference := st.regs.intr_state.sda_interference && ~((6 >< 6) wdata);
+            stretch_timeout := st.regs.intr_state.stretch_timeout && ~((7 >< 7) wdata);
+            sda_unstable := st.regs.intr_state.sda_unstable && ~((8 >< 8) wdata);
+            cmd_complete := st.regs.intr_state.cmd_complete && ~((9 >< 9) wdata);
+            tx_stretch := st.regs.intr_state.tx_stretch && ~((10 >< 10) wdata);
+            tx_overflow := st.regs.intr_state.tx_overflow && ~((11 >< 11) wdata);
+            acq_full := st.regs.intr_state.acq_full && ~((12 >< 12) wdata);
+            unexp_stop := st.regs.intr_state.unexp_stop && ~((13 >< 13) wdata);
+            host_timeout := st.regs.intr_state.host_timeout && ~((14 >< 14) wdata);
+          |>;
           buffered_notif := NONE;
         |>;
       in
         if nb >= 2 then INR (st_upd, NONE) else INL FFI_failed
   | 0x4 =>
       let
-        new_value = <|
-          fmt_threshold := (0 >< 0) wdata;
-          rx_threshold := (1 >< 1) wdata;
-          fmt_overflow := (2 >< 2) wdata;
-          rx_overflow := (3 >< 3) wdata;
-          nak := (4 >< 4) wdata;
-          scl_interference := (5 >< 5) wdata;
-          sda_interference := (6 >< 6) wdata;
-          stretch_timeout := (7 >< 7) wdata;
-          sda_unstable := (8 >< 8) wdata;
-          cmd_complete := (9 >< 9) wdata;
-          tx_stretch := (10 >< 10) wdata;
-          tx_overflow := (11 >< 11) wdata;
-          acq_full := (12 >< 12) wdata;
-          unexp_stop := (13 >< 13) wdata;
-          host_timeout := (14 >< 14) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with intr_enable := new_value;
+          regs := st'.regs with intr_enable := st'.regs.intr_enable with <|
+            fmt_threshold := (0 >< 0) wdata;
+            rx_threshold := (1 >< 1) wdata;
+            fmt_overflow := (2 >< 2) wdata;
+            rx_overflow := (3 >< 3) wdata;
+            nak := (4 >< 4) wdata;
+            scl_interference := (5 >< 5) wdata;
+            sda_interference := (6 >< 6) wdata;
+            stretch_timeout := (7 >< 7) wdata;
+            sda_unstable := (8 >< 8) wdata;
+            cmd_complete := (9 >< 9) wdata;
+            tx_stretch := (10 >< 10) wdata;
+            tx_overflow := (11 >< 11) wdata;
+            acq_full := (12 >< 12) wdata;
+            unexp_stop := (13 >< 13) wdata;
+            host_timeout := (14 >< 14) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
         if nb >= 2 then INR (st_upd, NONE) else INL FFI_failed
   | 0x8 =>
       let
-        new_value = <|
-          fmt_threshold := (0 >< 0) wdata;
-          rx_threshold := (1 >< 1) wdata;
-          fmt_overflow := (2 >< 2) wdata;
-          rx_overflow := (3 >< 3) wdata;
-          nak := (4 >< 4) wdata;
-          scl_interference := (5 >< 5) wdata;
-          sda_interference := (6 >< 6) wdata;
-          stretch_timeout := (7 >< 7) wdata;
-          sda_unstable := (8 >< 8) wdata;
-          cmd_complete := (9 >< 9) wdata;
-          tx_stretch := (10 >< 10) wdata;
-          tx_overflow := (11 >< 11) wdata;
-          acq_full := (12 >< 12) wdata;
-          unexp_stop := (13 >< 13) wdata;
-          host_timeout := (14 >< 14) wdata;
-        |>;
         st_upd = \st'. st';
       in
-        if nb >= 2 then INR (st_upd, SOME (Write (intr_test_write new_value))) else INL FFI_failed
+        if nb >= 2 then INR (st_upd, SOME (Write (intr_test_write (i2c_intr_test_decode_write wdata)))) else INL FFI_failed
   | 0xc =>
       let
-        new_value = <|
-          fatal_fault := (0 >< 0) wdata;
-        |>;
         st_upd = \st'. st';
       in
-        if nb >= 1 then INR (st_upd, SOME (Write (alert_test_write new_value))) else INL FFI_failed
+        if nb >= 1 then INR (st_upd, SOME (Write (alert_test_write (i2c_alert_test_decode_write wdata)))) else INL FFI_failed
   | 0x10 =>
       let
-        new_value = <|
-          enablehost := (0 >< 0) wdata;
-          enabletarget := (1 >< 1) wdata;
-          llpbk := (2 >< 2) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with ctrl := new_value;
+          regs := st'.regs with ctrl := st'.regs.ctrl with <|
+            enablehost := (0 >< 0) wdata;
+            enabletarget := (1 >< 1) wdata;
+            llpbk := (2 >< 2) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
@@ -139,32 +116,30 @@ Definition i2c_write_def:
         if nb >= 1 then INR (st_upd, NONE) else INL FFI_failed
   | 0x1c =>
       let
-        new_value = <|
-          fbyte := (7 >< 0) wdata;
-          start := (8 >< 8) wdata;
-          stop := (9 >< 9) wdata;
-          read := (10 >< 10) wdata;
-          rcont := (11 >< 11) wdata;
-          nakok := (12 >< 12) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with fdata := new_value;
+          regs := st'.regs with fdata := st'.regs.fdata with <|
+            fbyte := (7 >< 0) wdata;
+            start := (8 >< 8) wdata;
+            stop := (9 >< 9) wdata;
+            read := (10 >< 10) wdata;
+            rcont := (11 >< 11) wdata;
+            nakok := (12 >< 12) wdata;
+          |>;
           buffered_notif := SOME fdata_write;
         |>;
       in
         if nb >= 2 then INR (st_upd, NONE) else INL FFI_failed
   | 0x20 =>
       let
-        new_value = <|
-          rxrst := (0 >< 0) wdata;
-          fmtrst := (1 >< 1) wdata;
-          rxilvl := (4 >< 2) wdata;
-          fmtilvl := (6 >< 5) wdata;
-          acqrst := (7 >< 7) wdata;
-          txrst := (8 >< 8) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with fifo_ctrl := new_value;
+          regs := st'.regs with fifo_ctrl := st'.regs.fifo_ctrl with <|
+            rxrst := (0 >< 0) wdata;
+            fmtrst := (1 >< 1) wdata;
+            rxilvl := (4 >< 2) wdata;
+            fmtilvl := (6 >< 5) wdata;
+            acqrst := (7 >< 7) wdata;
+            txrst := (8 >< 8) wdata;
+          |>;
           buffered_notif := SOME fifo_ctrl_write;
         |>;
       in
@@ -176,13 +151,12 @@ Definition i2c_write_def:
         if nb >= 4 then INR (st_upd, NONE) else INL FFI_failed
   | 0x28 =>
       let
-        new_value = <|
-          txovrden := (0 >< 0) wdata;
-          sclval := (1 >< 1) wdata;
-          sdaval := (2 >< 2) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with ovrd := new_value;
+          regs := st'.regs with ovrd := st'.regs.ovrd with <|
+            txovrden := (0 >< 0) wdata;
+            sclval := (1 >< 1) wdata;
+            sdaval := (2 >< 2) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
@@ -194,86 +168,79 @@ Definition i2c_write_def:
         if nb >= 4 then INR (st_upd, NONE) else INL FFI_failed
   | 0x30 =>
       let
-        new_value = <|
-          thigh := (15 >< 0) wdata;
-          tlow := (31 >< 16) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with timing0 := new_value;
+          regs := st'.regs with timing0 := st'.regs.timing0 with <|
+            thigh := (15 >< 0) wdata;
+            tlow := (31 >< 16) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
         if nb >= 4 then INR (st_upd, NONE) else INL FFI_failed
   | 0x34 =>
       let
-        new_value = <|
-          t_r := (15 >< 0) wdata;
-          t_f := (31 >< 16) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with timing1 := new_value;
+          regs := st'.regs with timing1 := st'.regs.timing1 with <|
+            t_r := (15 >< 0) wdata;
+            t_f := (31 >< 16) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
         if nb >= 4 then INR (st_upd, NONE) else INL FFI_failed
   | 0x38 =>
       let
-        new_value = <|
-          tsu_sta := (15 >< 0) wdata;
-          thd_sta := (31 >< 16) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with timing2 := new_value;
+          regs := st'.regs with timing2 := st'.regs.timing2 with <|
+            tsu_sta := (15 >< 0) wdata;
+            thd_sta := (31 >< 16) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
         if nb >= 4 then INR (st_upd, NONE) else INL FFI_failed
   | 0x3c =>
       let
-        new_value = <|
-          tsu_dat := (15 >< 0) wdata;
-          thd_dat := (31 >< 16) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with timing3 := new_value;
+          regs := st'.regs with timing3 := st'.regs.timing3 with <|
+            tsu_dat := (15 >< 0) wdata;
+            thd_dat := (31 >< 16) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
         if nb >= 4 then INR (st_upd, NONE) else INL FFI_failed
   | 0x40 =>
       let
-        new_value = <|
-          tsu_sto := (15 >< 0) wdata;
-          t_buf := (31 >< 16) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with timing4 := new_value;
+          regs := st'.regs with timing4 := st'.regs.timing4 with <|
+            tsu_sto := (15 >< 0) wdata;
+            t_buf := (31 >< 16) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
         if nb >= 4 then INR (st_upd, NONE) else INL FFI_failed
   | 0x44 =>
       let
-        new_value = <|
-          val := (30 >< 0) wdata;
-          en := (31 >< 31) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with timeout_ctrl := new_value;
+          regs := st'.regs with timeout_ctrl := st'.regs.timeout_ctrl with <|
+            val := (30 >< 0) wdata;
+            en := (31 >< 31) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
         if nb >= 4 then INR (st_upd, NONE) else INL FFI_failed
   | 0x48 =>
       let
-        new_value = <|
-          address0 := (6 >< 0) wdata;
-          mask0 := (13 >< 7) wdata;
-          address1 := (20 >< 14) wdata;
-          mask1 := (27 >< 21) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with target_id := new_value;
+          regs := st'.regs with target_id := st'.regs.target_id with <|
+            address0 := (6 >< 0) wdata;
+            mask0 := (13 >< 7) wdata;
+            address1 := (20 >< 14) wdata;
+            mask1 := (27 >< 21) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
@@ -285,22 +252,20 @@ Definition i2c_write_def:
         if nb >= 2 then INR (st_upd, NONE) else INL FFI_failed
   | 0x50 =>
       let
-        new_value = <|
-          txdata := (7 >< 0) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with txdata := new_value;
+          regs := st'.regs with txdata := st'.regs.txdata with <|
+            txdata := (7 >< 0) wdata;
+          |>;
           buffered_notif := SOME txdata_write;
         |>;
       in
         if nb >= 1 then INR (st_upd, NONE) else INL FFI_failed
   | 0x54 =>
       let
-        new_value = <|
-          host_timeout_ctrl := (31 >< 0) wdata;
-        |>;
         st_upd = \st'. st' with <|
-          regs := st'.regs with host_timeout_ctrl := new_value;
+          regs := st'.regs with host_timeout_ctrl := st'.regs.host_timeout_ctrl with <|
+            host_timeout_ctrl := (31 >< 0) wdata;
+          |>;
           buffered_notif := NONE;
         |>;
       in
