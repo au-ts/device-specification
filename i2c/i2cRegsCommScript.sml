@@ -1,7 +1,7 @@
 open HolKernel Parse boolLib bossLib;
 open wordsTheory;
 open wordsLib;
-open cheshireCircuitTheory i2cRegsTheory;
+open cheshireCircuitTheory i2cCoreTheory i2cRegsTheory;
 
 val _ = new_theory "i2cRegsComm";
 
@@ -376,6 +376,38 @@ Definition i2c_req_error_def:
   | _ => T
 End
 
+Theorem i2c_req_error_alt:
+  i2c_req_error (req: 7 reg_req) <=>
+  case req.addr of
+    0x0w => req.valid /\ req.write /\ ((1 >< 0) req.wstrb: 2 word) <> 3w
+  | 0x4w => req.valid /\ req.write /\ ((1 >< 0) req.wstrb: 2 word) <> 3w
+  | 0x8w => req.valid /\ req.write /\ ((1 >< 0) req.wstrb: 2 word) <> 3w
+  | 0xcw => req.valid /\ req.write /\ ((0 >< 0) req.wstrb: 1 word) <> 1w
+  | 0x10w => req.valid /\ req.write /\ ((0 >< 0) req.wstrb: 1 word) <> 1w
+  | 0x14w => req.valid /\ req.write /\ ((1 >< 0) req.wstrb: 2 word) <> 3w
+  | 0x18w => req.valid /\ req.write /\ ((0 >< 0) req.wstrb: 1 word) <> 1w
+  | 0x1cw => req.valid /\ req.write /\ ((1 >< 0) req.wstrb: 2 word) <> 3w
+  | 0x20w => req.valid /\ req.write /\ ((1 >< 0) req.wstrb: 2 word) <> 3w
+  | 0x24w => req.valid /\ req.write /\ ((3 >< 0) req.wstrb: 4 word) <> 15w
+  | 0x28w => req.valid /\ req.write /\ ((0 >< 0) req.wstrb: 1 word) <> 1w
+  | 0x2cw => req.valid /\ req.write /\ ((3 >< 0) req.wstrb: 4 word) <> 15w
+  | 0x30w => req.valid /\ req.write /\ ((3 >< 0) req.wstrb: 4 word) <> 15w
+  | 0x34w => req.valid /\ req.write /\ ((3 >< 0) req.wstrb: 4 word) <> 15w
+  | 0x38w => req.valid /\ req.write /\ ((3 >< 0) req.wstrb: 4 word) <> 15w
+  | 0x3cw => req.valid /\ req.write /\ ((3 >< 0) req.wstrb: 4 word) <> 15w
+  | 0x40w => req.valid /\ req.write /\ ((3 >< 0) req.wstrb: 4 word) <> 15w
+  | 0x44w => req.valid /\ req.write /\ ((3 >< 0) req.wstrb: 4 word) <> 15w
+  | 0x48w => req.valid /\ req.write /\ ((3 >< 0) req.wstrb: 4 word) <> 15w
+  | 0x4cw => req.valid /\ req.write /\ ((1 >< 0) req.wstrb: 2 word) <> 3w
+  | 0x50w => req.valid /\ req.write /\ ((0 >< 0) req.wstrb: 1 word) <> 1w
+  | 0x54w => req.valid /\ req.write /\ ((3 >< 0) req.wstrb: 4 word) <> 15w
+  | _ => req.valid
+Proof
+  simp [i2c_req_error_def]
+  >> rpt (IF_CASES_TAC >- simp [])
+  >> simp []
+QED
+
 Definition i2c_hwext_notif_rel_def:
   i2c_hwext_notif_rel (notif: i2c_hwext_notif option) (req: 7 reg_req) <=>
     ~i2c_req_error req /\
@@ -383,6 +415,29 @@ Definition i2c_hwext_notif_rel_def:
     (!value. notif = SOME (Write (alert_test_write value)) <=> req.addr = 0xcw /\ req.valid /\ req.write /\ i2c_alert_test_decode_write req.wdata = value) /\
     (notif = SOME (Read rdata_read) <=> req.addr = 0x18w /\ req.valid /\ ~req.write) /\
     (notif = SOME (Read acqdata_read) <=> req.addr = 0x4cw /\ req.valid /\ ~req.write)
+End
+
+Definition i2c_hwext_read_rel_def:
+  i2c_hwext_read_rel (st: i2c_state) (hw2reg: i2c_hw2reg) <=>
+  hw2reg.status.fmtfull_d = i2c_get_status_fmtfull st /\
+  hw2reg.status.rxfull_d = i2c_get_status_rxfull st /\
+  hw2reg.status.fmtempty_d = i2c_get_status_fmtempty st /\
+  hw2reg.status.hostidle_d = i2c_get_status_hostidle st /\
+  hw2reg.status.targetidle_d = i2c_get_status_targetidle st /\
+  hw2reg.status.rxempty_d = i2c_get_status_rxempty st /\
+  hw2reg.status.txfull_d = i2c_get_status_txfull st /\
+  hw2reg.status.acqfull_d = i2c_get_status_acqfull st /\
+  hw2reg.status.txempty_d = i2c_get_status_txempty st /\
+  hw2reg.status.acqempty_d = i2c_get_status_acqempty st /\
+  hw2reg.rdata.rdata_d = i2c_get_rdata_rdata st /\
+  hw2reg.fifo_status.fmtlvl_d = i2c_get_fifo_status_fmtlvl st /\
+  hw2reg.fifo_status.txlvl_d = i2c_get_fifo_status_txlvl st /\
+  hw2reg.fifo_status.rxlvl_d = i2c_get_fifo_status_rxlvl st /\
+  hw2reg.fifo_status.acqlvl_d = i2c_get_fifo_status_acqlvl st /\
+  hw2reg.val.scl_rx_d = i2c_get_val_scl_rx st /\
+  hw2reg.val.sda_rx_d = i2c_get_val_sda_rx st /\
+  hw2reg.acqdata.abyte_d = i2c_get_acqdata_abyte st /\
+  hw2reg.acqdata.signal_d = i2c_get_acqdata_signal st
 End
 
 val _ = export_theory ();

@@ -96,9 +96,10 @@ Datatype:
 End"""
 
 
-def req_error_case(reg: Register):
+def req_error_case(reg: Register, alt: bool):
     min_bytes = ceil(reg.get_width() / 8)
-    return rf"{hex(reg.offset)}w => req.write /\ (({min_bytes - 1} >< 0) req.wstrb: {min_bytes} word) <> {(1 << min_bytes) - 1}w"
+    valid = r"req.valid /\ " if alt else ""
+    return rf"{hex(reg.offset)}w => {valid}req.write /\ (({min_bytes - 1} >< 0) req.wstrb: {min_bytes} word) <> {(1 << min_bytes) - 1}w"
 
 
 def req_error():
@@ -106,9 +107,23 @@ def req_error():
 Definition {ip.name}_req_error_def:
   {ip.name}_req_error (req: 7 reg_req) <=>
   req.valid /\\ case req.addr of
-    {"\n  | ".join(req_error_case(reg) for reg in block.entries)}
+    {"\n  | ".join(req_error_case(reg, False) for reg in block.entries)}
   | _ => T
 End"""
+
+
+def req_error_alt():
+    return f"""\
+Theorem {ip.name}_req_error_alt:
+  {ip.name}_req_error (req: 7 reg_req) <=>
+  case req.addr of
+    {"\n  | ".join(req_error_case(reg, True) for reg in block.entries)}
+  | _ => req.valid
+Proof
+  simp [i2c_req_error_def]
+  >> rpt (IF_CASES_TAC >- simp [])
+  >> simp []
+QED"""
 
 
 def field_notif_rel(reg: Register, field: Field):
@@ -132,7 +147,7 @@ regs_comm = f"""\
 open HolKernel Parse boolLib bossLib;
 open wordsTheory;
 open wordsLib;
-open cheshireCircuitTheory i2cRegsTheory;
+open cheshireCircuitTheory i2cCoreTheory i2cRegsTheory;
 
 val _ = new_theory "{ip.name}RegsComm";
 
@@ -151,10 +166,17 @@ End
 
 {req_error()}
 
+{req_error_alt()}
+
 Definition {ip.name}_hwext_notif_rel_def:
   {ip.name}_hwext_notif_rel (notif: {ip.name}_hwext_notif option) (req: 7 reg_req) <=>
     ~{ip.name}_req_error req /\\
     {" /\\\n    ".join(term for reg in block.entries for term in reg_hwext_notif_rels(reg) if reg.hwext)}
+End
+
+Definition {ip.name}_hwext_read_rel_def:
+  {ip.name}_hwext_read_rel (st: {ip.name}_state) (hw2reg: {ip.name}_hw2reg) <=>
+  {" /\\\n  ".join(f"hw2reg.{name(reg)}.{name(field)}_d = {ip.name}_get_{name(reg)}_{name(field)} st" for reg in block.entries for field in reg.fields if reg.hwext and any(field.swaccess.allows_read() for field in reg.fields))}
 End
 
 val _ = export_theory ();

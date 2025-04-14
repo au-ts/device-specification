@@ -84,13 +84,25 @@ def reg_top_reg_qe_assns(reg: Register):
 
 
 def reg_top_field_assn(reg: Register, field: Field):
+    # Use the same format in the case of doing nothing as well, so that we can
+    # factor it out into `s' with ... := if .. then ... else ...`.
+    #
+    # TODO: consider turning this into a generalised transformation instead?
+    #
+    # There'd still need to be the manual step of turning things into
+    # `i2c_reg_error` for `comb_1` though.
+    #
+    # NOTE: if we want to try and turn this back into plain `s'` with some
+    # post-processing, we should be able to do so by changing this to `s'.*` and
+    # using theorems of the form `rec with field := rec.field = rec`.
+    unchanged = f"s' with regs := s'.regs with {name(reg)} := s'.regs.{name(reg)} with {name(field)} := s.regs.{name(reg)}.{name(field)}"
     if field.hwaccess.allows_write():
         hw_if = f""" if s'.hw2reg.{name(reg)}.{name(field)}_de then
       s' with regs := s'.regs with {name(reg)} := s'.regs.{name(reg)} with {name(field)} := s'.hw2reg.{name(reg)}.{name(field)}_d
     else
-      s'"""
+      {unchanged}"""
     else:
-        hw_if = "\n      s'"
+        hw_if = f"\n      {unchanged}"
 
     if field.swaccess.allows_write():
         # field_value is only used in the case of rw1c, so we don't have to worry about
@@ -132,7 +144,7 @@ comms = [
     if field.hwqe and not reg.hwext
 ]
 
-regs_circuit_lib = f"""
+regs_circuit_lib = f"""\
 structure {ip.name}RegsCircuitLib =
 struct
 
@@ -144,12 +156,11 @@ open {ip.name}CircuitStateTheory {ip.name}RegsTheory {ip.name}RegsCommTheory;
  * let `i2cCircuitTheory` make the actual definitions. *)
 val {ip.name}_reg_top_comb_1_tm = ``
   let
-    (* Only the bottom 7 bits of the address are used. *)
-    s' = s' with addr := (44 >< 38) fext.reg_req_i;
-    s' = s' with write := word_bit 37 fext.reg_req_i;
-    s' = s' with wdata := (36 >< 5) fext.reg_req_i;
-    s' = s' with wstrb := (4 >< 1) fext.reg_req_i;
-    s' = s' with valid := word_bit 0 fext.reg_req_i;
+    s' = s' with addr := (reg_req_decode fext.reg_req_i: 7 reg_req).addr;
+    s' = s' with write := (reg_req_decode fext.reg_req_i: 7 reg_req).write;
+    s' = s' with wdata := (reg_req_decode fext.reg_req_i: 7 reg_req).wdata;
+    s' = s' with wstrb := (reg_req_decode fext.reg_req_i: 7 reg_req).wstrb;
+    s' = s' with valid := (reg_req_decode fext.reg_req_i: 7 reg_req).valid;
 
     s' = case s'.addr of
       {"\n    | ".join(reg_top_error_case(reg) for reg in block.entries)}

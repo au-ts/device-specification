@@ -62,7 +62,8 @@ End
 
 Definition i2c_core_state_rel_def:
   (* mstate = model state, cstate = circuit state *)
-  i2c_core_state_rel (mstate: i2c_state) (cstate: i2c_circuit_state) = T
+  i2c_core_state_rel (mstate: i2c_state) (cstate: i2c_circuit_state) =
+    i2c_hwext_read_rel mstate cstate.hw2reg
 End
 
 Definition i2c_state_rel_def:
