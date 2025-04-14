@@ -20,13 +20,15 @@ Intended proof chain:
 
 # Contents of this repository
 
-- `util/gen_oracle.py`: A script which generates various things based on Cheshire's memory maps:
+- `util`: scripts which generate various things based on Cheshire's memory maps:
 
-  - `i2c/i2cRegsScript.sml`: Record types containing all the non-`hwext` registers of a peripheral, and 'notification' types for telling the interface model when accesses with potential side effects have occured.
+  - `util/gen_regs.py`: Record types containing all the non-`hwext` registers of a peripheral, and 'notification' types for telling the interface model when accesses with potential side effects have occured.
     - Side effects are helpfully annotated in the memory map.
-  - `i2c/i2cMappingsScript.sml`: The main functions defining what happens when you read/write to an address in the interface model, calling out to manually-defined functions for `hwext` registers and returning notifications for accesses to registers with side effects.
-  - `i2c/i2cRegsCommScript.sml`: Type definitions for `reg2hw` and `hw2reg`, the interfaces for communicating between `i2c_core` and `i2c_reg_top`.
-  - `i2c/i2cRegsCircuitLib.sml`: The HOL version of `i2c_reg_top`.
+  - `util/gen_mappings.py`: The main functions defining what happens when you read/write to an address in the interface model, calling out to manually-defined functions for `hwext` registers and returning notifications for accesses to registers with side effects.
+  - `util/gen_regs_comm.py`: Type definitions for `reg2hw` and `hw2reg`, the interfaces for communicating between `i2c_core` and `i2c_reg_top`.
+  - `util/gen_regs_circuit.py`: The HOL version of `i2c_reg_top`.
+  - `util/eqy_prepare.py`: The translated version of `i2c_reg_top` is actually the full I2C core, but with only the `always` blocks for `i2c_reg_top` included. So, this script is needed to change the port declaration to that of `i2c_reg_top`, and change `reg2hw` and `hw2reg` from local variables into ports.
+  - `util/common.py`: Shared code.
 
 - `i2c/i2cCoreScript.sml`: The main part of the interface model, which consists of the functions that `i2cMappingsTheory` calls into as well as `i2c_tick` for defining what happens to the circuit's internal state on each clock cycle.
 - `common/sharedMemoryOracleScript.sml`: A helper (`sh_mem_oracle`) for defining FFI oracles that only support shared memory, without having to deal with any of the FFI glue, as well as a theorem (`sh_mem_oracle_sh_mem_load`) that shared memory loads from an oracle using this helper get through the FFI glue intact.
@@ -38,8 +40,8 @@ Intended proof chain:
 
 - `i2c/i2cCircuitStateScript.sml`: Defines the state for the HOL version of Cheshire I2C, so that it can be used by `i2cRegsCircuitLib`.
 - `i2c/i2cCircuitScript.sml`: Defines the top-level module for the HOL version of Cheshire I2C, currently a stub which just includes `i2c_reg_top`.
+- `i2c/i2cRegsCircuitProofScript.sml`: The (incomplete) proof that if `i2c_core` behaves the same as `i2c_tick`, then `i2c_reg_top` behaves the same as `i2c_oracle`.
 
 - `i2c/i2c_reg_top.eqy`: `eqy` configuration for equivalence-checking the translated version of `i2c_reg_top` against the real one.
   - This will probably be removed once the HOL version of the rest of the circuit is done, since then we can equivalence-check it all at once and don't need to deal with hacks like `eqy_prepare`.
-- `util/eqy_prepare.py`: The translated version of `i2c_reg_top` is actually the full I2C core, but with only the `always` blocks for `i2c_reg_top` included. So, this script is needed to change the port declaration to that of `i2c_reg_top`, and change `reg2hw` and `hw2reg` from local variables into ports.
-- `util/i2c_reg_top_wrapper.sv`: A wrapper around `i2c_reg_top` which instantiates `reg_req_t` and `reg_rsp_t`, as well as fixing `devmode_i` to 1.
+- `i2c/i2c_reg_top_wrapper.sv`: A wrapper around `i2c_reg_top` which instantiates `reg_req_t` and `reg_rsp_t`, as well as fixing `devmode_i` to 1.
