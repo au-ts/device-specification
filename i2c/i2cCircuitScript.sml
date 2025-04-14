@@ -1,7 +1,7 @@
 open HolKernel Parse boolLib bossLib;
 open translatorLib verilogPrintLib;
 open i2cRegsCircuitLib;
-open i2cCircuitStateTheory;
+open cheshireCircuitTheory i2cCircuitStateTheory;
 
 val _ = new_theory "i2cCircuit";
 

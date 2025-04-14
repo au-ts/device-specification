@@ -15,13 +15,13 @@ i2cRegsScript.sml: ../util/gen_regs.py ../util/common.py
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
 		> i2cRegsScript.sml
 
-i2cMappingsScript.sml: ../util/gen_mappings.py ../util/common.py
+i2cMappingsScript.sml: ../util/gen_mappings.py ../util/common.py i2cCoreTheory.uo
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_mappings \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
 		> i2cMappingsScript.sml
 
-i2cRegsCommScript.sml: ../util/gen_regs_comm.py ../util/common.py
+i2cRegsCommScript.sml: ../util/gen_regs_comm.py ../util/common.py i2cRegsTheory.uo i2cCoreTheory.uo
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_regs_comm \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \

@@ -1,4 +1,6 @@
 i2cRegsScript.sml
+i2cMappingsScript.sml
+i2cRegsCommScript.sml
 i2cRegsCircuitLib.sml
 
 i2c_circuit.sv
