@@ -68,12 +68,8 @@ Datatype:
     fmt_fifo : 13 word list;
     fsm_state : fsmState;
     counter : 20 word ;
-    log_start : bool;
     pend_restart : bool;
-    req_restart : bool;
     trans_started : bool;
-    log_stop : bool;
-    load_tcount : bool;
   |>
 End
 
@@ -229,10 +225,21 @@ Definition i2c_tick_def:
                    | Transmitting HoldDevAck     => delay.hold_bit
                    | _                           => 0w ;
 
-      (* TODO : model the behaviour when the counter is stopped via clock stretching --- via fnums ? *)
-      counter' = if st.load_tcount then curr_delay else st.counter - 1w;
+      load_tcount = (st.fsm_state ≠ Idle ∧ st.counter = 1w ∨ st.fsm_state = PopFmtFifo);
+      log_start = (st.fsm_state = Starting Setup ∧ st.counter = 1w);
+      log_stop  = (st.fsm_state = Stopping StopBeginning ∧ st.counter = 1w);
 
+      fmt_flag_read_bytes = word_bit 10 $ HD st.fmt_fifo;
       fmt_flag_start_before = word_bit 8 $ HD st.fmt_fifo;
+      req_restart = (¬fmt_flag_read_bytes
+                    ∧ fmt_flag_start_before
+                    ∧ st.fsm_state = Active
+                    ∧ st.trans_started
+                    );
+
+      (* TODO : model the behaviour when the counter is stopped via clock stretching --- via fnums ? *)
+      counter' = if load_tcount then curr_delay else st.counter - 1w;
+
       fsm_state' = case st.fsm_state of
                      Idle           => if st.regs.ctrl.enablehost = 1w ∧ ¬ NULL st.fmt_fifo then Active
                                        else Idle
@@ -312,34 +319,27 @@ Definition i2c_tick_def:
       rx_fifo'' = if st.fsm_state = Receiving Beginning ∧ fsm_state' = Receiving HostClock
                   then flip SNOC rx_fifo' $ n2w $ fnums 2 else rx_fifo';
 
-      log_start' = (st.fsm_state = Starting Setup ∧ fsm_state' = Starting StartEnding);
 
       (* fnums 3 used to indicate sda_i *)
       regs' = if (st.fsm_state = Transmitting ClockPulseAck ∧ ¬ (word_bit 12 $ HD st.fmt_fifo) ∧ fnums 3 ≠ 0)
               then st.regs with <| intr_state := (st.regs.intr_state with <| nak := 1w |>) |>
-              else if (st.fsm_state = Stopping HoldStop ∨ log_start' ∧ st.pend_restart)
+              else if ( st.fsm_state = Stopping HoldStop
+                      ∨ st.fsm_state = Starting Setup ∧ log_start ∧ st.pend_restart)
               then st.regs with <| intr_state := (st.regs.intr_state with <| cmd_complete := 1w |>) |>
               else st.regs;
 
-      log_stop' = (st.fsm_state = Stopping StopBeginning ∧ fsm_state' = Stopping HoldStop);
 
       (* TODO : model the effect of reset to this register --- via fnums? *)
-      pend_restart' = if st.pend_restart ∧ st.regs.ctrl.enablehost = 0w ∨ st.log_start then F
-                      else if st.req_restart then T
+      pend_restart' = if st.pend_restart ∧ st.regs.ctrl.enablehost = 0w ∨ log_start then F
+                      else if req_restart then T
                       else st.pend_restart;
 
-      req_restart'  = ( fmt_flag_start_before
-                      ∧ st.fsm_state = Active
-                      ∧ fsm_state' = Transmitting ClockLow
-                      ∧ st.trans_started
-                      );
 
       (* TODO : model the effect of reset to this register --- via fnums ? *)
-      trans_started' = if st.trans_started ∧ st.regs.ctrl.enablehost = 0w ∨ st.log_stop then F
-                       else if st.log_start then T
+      trans_started' = if st.trans_started ∧ st.regs.ctrl.enablehost = 0w ∨ log_stop then F
+                       else if log_start then T
                        else st.trans_started;
 
-      load_tcount' = (st.fsm_state ≠ Idle ∧ st.fsm_state ≠ fsm_state');
       fnums' = λn. fnums (n + 3);
     in
       <|
@@ -350,11 +350,8 @@ Definition i2c_tick_def:
         regs := regs';
         counter := counter';
         fsm_state := fsm_state';
-        log_start := log_start';
         pend_restart := pend_restart';
-        req_restart := req_restart';
         trans_started := trans_started';
-        load_tcount := load_tcount';
       |>
 End
 
