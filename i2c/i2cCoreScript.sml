@@ -398,23 +398,20 @@ Definition i2c_tick_def:
               else st.regs;
 
 
-      (* TODO : model the effect of reset to this register --- via fnums? *)
       pend_restart' = if st.pend_restart ∧ st.regs.ctrl.enablehost = 0w ∨ log_start then F
                       else if req_restart then T
                       else st.pend_restart;
 
 
-      (* TODO : model the effect of reset to this register --- via fnums ? *)
       trans_started' = if st.trans_started ∧ st.regs.ctrl.enablehost = 0w ∨ log_stop then F
                        else if log_start then T
                        else st.trans_started;
 
-      (* TODO : model the effect of reset to this register --- via fnums ? *)
       bit_index' = if bit_clr then 7w
                    else if bit_decr then st.bit_index - 1w
                    else st.bit_index;
 
-      fnums' = λn. fnums (n + 3);
+      fnums' = λn. fnums (n + 4);
     in
       <|
         fnums := fnums';
