@@ -244,10 +244,10 @@ Definition i2c_tick_def:
       log_start = (st.fsm_state = Starting SetupStart ∧ st.counter = 1w);
       log_stop  = (st.fsm_state = Stopping ClockStop ∧ st.counter = 1w);
 
-      fmt_flag_start_before = word_bit 8  $ HD st.fmt_fifo;
-      fmt_flag_stop_after   = word_bit 9  $ HD st.fmt_fifo;
-      fmt_flag_read_bytes   = word_bit 10 $ HD st.fmt_fifo;
-      fmt_byte : 8 word     = (7 >< 0) (HD st.fmt_fifo);
+      fmt_flag_start_before = (¬ NULL st.fmt_fifo ∧ word_bit 8 $ HD st.fmt_fifo);
+      fmt_flag_stop_after   = (¬ NULL st.fmt_fifo ∧ word_bit 9  $ HD st.fmt_fifo);
+      fmt_flag_read_bytes   = (¬ NULL st.fmt_fifo ∧ word_bit 10 $ HD st.fmt_fifo);
+      fmt_byte : 8 word     = if ¬ NULL st.fmt_fifo then (7 >< 0) (HD st.fmt_fifo) else 0w;
 
       req_restart = (¬fmt_flag_read_bytes
                     ∧ fmt_flag_start_before
@@ -437,7 +437,6 @@ Definition i2c_tick_def:
         byte_index := byte_index';
       |>
 End
-
 
 
 
