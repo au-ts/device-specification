@@ -79,6 +79,7 @@ Datatype:
     trans_started : bool;
     bit_index : 2 word ;
     stretch_idle_cnt : 32 word;
+    byte_index : 9 word;
   |>
 End
 
@@ -246,6 +247,7 @@ Definition i2c_tick_def:
       fmt_flag_start_before = word_bit 8  $ HD st.fmt_fifo;
       fmt_flag_stop_after   = word_bit 9  $ HD st.fmt_fifo;
       fmt_flag_read_bytes   = word_bit 10 $ HD st.fmt_fifo;
+      fmt_byte : 8 word     = (7 >< 0) (HD st.fmt_fifo);
 
       req_restart = (¬fmt_flag_read_bytes
                     ∧ fmt_flag_start_before
@@ -286,6 +288,15 @@ Definition i2c_tick_def:
       counter' = if load_tcount then curr_delay
                  else if st.stretch_idle_cnt = 0w then st.counter - 1w
                  else st.counter;
+      byte_clr = (st.fsm_state = Active ∧ fmt_flag_read_bytes);
+      byte_decr = (st.fsm_state = Receiving HostHoldBitAck ∧ st.counter = 1w ∧ st.byte_index ≠ 1w);
+      byte_num = if ¬fmt_flag_read_bytes then (0w : 9 word)
+                 else if fmt_byte = 0w then (256w : 9 word)
+                 else w2w fmt_byte;
+
+      byte_index' = if byte_clr then byte_num
+                    else if byte_decr then st.byte_index - 1w
+                    else st.byte_index;
 
       fsm_state' = case st.fsm_state of
                      Idle              => if st.regs.ctrl.enablehost = 1w ∧ ¬ NULL st.fmt_fifo then Active
@@ -315,12 +326,10 @@ Definition i2c_tick_def:
                      HostClockPulseAck => if st.counter > 1w then Receiving HostClockPulseAck
                                           else Receiving HostHoldBitAck
 
-                   (* fnums 0 is used to model whether this is the last block to be received --- controlled via
-                      the number of bytes needs to be read in fdata *)
                    | Receiving
                      HostHoldBitAck    => if st.counter > 1w then Receiving HostHoldBitAck
-                                          else if fnums 1 ≠ 0 ∧ word_bit 9 $ HD st.fmt_fifo then Stopping ClockStop
-                                          else if fnums 1 ≠ 0 ∧ ¬ (word_bit 9 $ HD st.fmt_fifo) then PopFmtFifo
+                                          else if st.byte_index = 1w ∧ fmt_flag_stop_after then Stopping ClockStop
+                                          else if st.byte_index = 1w ∧ ¬fmt_flag_stop_after  then PopFmtFifo
                                           else Receiving ReadClockLow
 
                    | Stopping
@@ -384,13 +393,13 @@ Definition i2c_tick_def:
 
       (* The FIFO can't insert into a spot that was freed in the same clock cycle, so
        * we need to use `st.rx_fifo` rather than `rx_fifo'`. *)
-      (* fnums 2 is used to model the data being read *)
+      (* fnums 1 is used to model the data being read *)
       rx_fifo'' = if st.fsm_state = Receiving ReadHoldBit ∧ fsm_state' = Receiving HostClockLowAck
-                  then flip SNOC rx_fifo' $ n2w $ fnums 2 else rx_fifo';
+                  then flip SNOC rx_fifo' $ n2w $ fnums 1 else rx_fifo';
 
 
-      (* fnums 3 used to indicate sda_i *)
-      regs' = if (st.fsm_state = Transmitting ClockPulseAck ∧ ¬ (word_bit 12 $ HD st.fmt_fifo) ∧ fnums 3 ≠ 0)
+      (* fnums 2 used to indicate sda_i *)
+      regs' = if (st.fsm_state = Transmitting ClockPulseAck ∧ ¬ (word_bit 12 $ HD st.fmt_fifo) ∧ fnums 2 ≠ 0)
               then st.regs with <| intr_state := (st.regs.intr_state with <| nak := 1w |>) |>
               else if ( st.fsm_state = Stopping HoldStop
                       ∨ st.fsm_state = Starting SetupStart ∧ log_start ∧ st.pend_restart)
@@ -411,7 +420,7 @@ Definition i2c_tick_def:
                    else if bit_decr then st.bit_index - 1w
                    else st.bit_index;
 
-      fnums' = λn. fnums (n + 4);
+      fnums' = λn. fnums (n + 3);
     in
       <|
         fnums := fnums';
@@ -425,6 +434,7 @@ Definition i2c_tick_def:
         trans_started := trans_started';
         bit_index := bit_index';
         stretch_idle_cnt := stretch_idle_cnt';
+        byte_index := byte_index';
       |>
 End
 
