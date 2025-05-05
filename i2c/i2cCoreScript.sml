@@ -453,6 +453,10 @@ Definition i2c_tick_def:
       |>
 End
 
-
+Theorem i2c_tick_buffered_notif_NONE:
+  !notif st. (i2c_tick notif st).buffered_notif = NONE
+Proof
+  simp [i2c_tick_def]
+QED
 
 val _ = export_theory();

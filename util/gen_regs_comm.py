@@ -176,8 +176,29 @@ End
 
 Definition {ip.name}_hwext_read_rel_def:
   {ip.name}_hwext_read_rel (st: {ip.name}_state) (hw2reg: {ip.name}_hw2reg) <=>
+  (* TODO: we probably shouldn't be including write-only fields in a hwext struct
+   * which happens to have other readable fields here? *)
   {" /\\\n  ".join(f"hw2reg.{name(reg)}.{name(field)}_d = {ip.name}_get_{name(reg)}_{name(field)} st" for reg in block.entries for field in reg.fields if reg.hwext and any(field.swaccess.allows_read() for field in reg.fields))}
 End
+
+(* Whether the transitions from `regs` -> `regs'` is in accordance with the
+ * instructions in `hw2reg`. *)
+Definition {ip.name}_hw_write_rel_def:
+  (* hw2reg is from the same clock cycle as `regs`, not `regs'`. *)
+  {ip.name}_hw_write_rel (regs: {ip.name}_regs) (regs': {ip.name}_regs) (hw2reg: {ip.name}_hw2reg) <=>
+  {" /\\\n  ".join(rf"regs'.{name(reg)}.{name(field)} = (if hw2reg.{name(reg)}.{name(field)}_de then hw2reg.{name(reg)}.{name(field)}_d else regs.{name(reg)}.{name(field)})" for reg in block.entries for field in reg.fields if not reg.hwext and field.hwaccess.allows_write())}
+End
+
+(* This probably shouldn't go here but I don't want to create a whole new file
+ * just for this. *)
+Theorem {ip.name}_tick_hwro_unchanged:
+  {" /\\\n  ".join(f"({ip.name}_tick notif st).regs.{name(reg)}.{name(field)} = st.regs.{name(reg)}.{name(field)}" for reg in block.entries for field in reg.fields if not reg.hwext and not field.hwaccess.allows_write())}
+Proof
+  simp [{ip.name}_tick_def]
+  >> rpt strip_tac
+  >> rpt IF_CASES_TAC
+  >> simp []
+QED
 
 val _ = export_theory ();
 """

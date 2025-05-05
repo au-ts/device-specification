@@ -1,7 +1,7 @@
 open HolKernel Parse boolLib bossLib;
 open translatorLib;
-open cheshireCircuitTheory i2cCircuitStateTheory;
-open i2cRegsCircuitLib i2cMappingsTheory;
+open i2cRegsCircuitLib;
+open cheshireCircuitTheory i2cCircuitStateTheory i2cCoreTheory i2cMappingsTheory;
 
 val _ = new_theory "i2cRegsCircuitProof";
 
@@ -171,12 +171,12 @@ Proof
   rpt strip_tac
   >> asm_simp_tac std_ss [i2c_write_def, dimword_def, dimindex_7, w2n_eq_iff_eq_n2w]
   >> rpt TOP_CASE_TAC
-  >> (simp [i2c_req_error_def]
-      (* We need to re-evaluate this every time so that Once doesn't mark itself as
-       * used after the first subgoal and fail to apply these to any of the others. *)
-      >> goal_term (fn _ => pure_rewrite_tac (map Once all_ones_rewrites))
-      >> dep_rewrite.DEP_REWRITE_TAC [GSYM nb_wstrb]
-      >> simp [])
+  >> simp [i2c_req_error_def]
+  (* We need to re-evaluate this every time so that Once doesn't mark itself as
+   * used after the first subgoal and fail to apply these to any of the others. *)
+  >> goal_term (fn _ => pure_rewrite_tac (map Once all_ones_rewrites))
+  >> dep_rewrite.DEP_REWRITE_TAC [GSYM nb_wstrb]
+  >> simp []
 QED
 
 Theorem i2c_req_error_i2c_read:
@@ -190,7 +190,7 @@ Proof
   >> simp [i2c_req_error_def]
 QED
 
-Theorem i2c_reg_top_rsp_correct:
+Theorem i2c_reg_top_rsp_correct_inner:
   let
     i2c = mk_module (procs (ffs1 ++ [i2c_reg_top_ff] ++ ffs2)) (procs ([i2c_reg_top_comb_1] ++ combs ++ [i2c_reg_top_comb_2])) i2c_circuit_init;
     req = reg_req_decode (fext n).reg_req_i: 7 reg_req;
@@ -202,11 +202,11 @@ Theorem i2c_reg_top_rsp_correct:
       SUM_MAP I (\(notif, rdata). (I, notif, SOME rdata)) (i2c_read st nb (w2n req.addr));
     rsp = reg_rsp_decode (i2c fext fbits n).reg_rsp_o;
   in
-  (!proc fext s s'. MEM proc combs ==>
+  (!proc fext s s'. MEM proc (ffs1 ++ ffs2 ++ combs) ==>
     let
       s'' = proc fext s s'
     in
-      s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
+      s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
       /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid)
   /\ i2c_state_rel st (i2c fext fbits n)
@@ -255,6 +255,86 @@ Proof
           >> simp [i2c_reg_top_comb_1_flat]))
 QED
 
+Theorem i2c_reg_top_rsp_correct = SIMP_RULE (pure_ss ++ boolSimps.LET_ss) [] i2c_reg_top_rsp_correct_inner;
+
+Theorem i2c_write_i2c_hwext_notif_rel:
+  req.valid /\ req.write /\ (∀i. word_bit i req.wstrb ⇔ i < nb) /\
+  i2c_write st nb (w2n req.addr) req.wdata = INR (_, notif) ==>
+  i2c_hwext_notif_rel notif req
+Proof
+  pure_rewrite_tac [i2c_write_def]
+  >> rpt TOP_CASE_TAC
+  >> rpt strip_tac
+  >> fs [i2c_hwext_notif_rel_def, i2c_req_error_def, w2n_eq_iff_eq_n2w]
+  >> goal_term (fn _ => pure_rewrite_tac (map Once all_ones_rewrites))
+  >> dep_rewrite.DEP_REWRITE_TAC [GSYM nb_wstrb]
+  >> simp []
+  >> first_x_assum (assume_tac o GSYM)
+  >> simp []
+QED
+
+Theorem i2c_read_i2c_hwext_notif_rel:
+  req.valid /\ ~req.write /\
+  i2c_read st nb (w2n req.addr) = INR (notif, _) ==>
+  i2c_hwext_notif_rel notif req
+Proof
+  pure_rewrite_tac [i2c_read_def]
+  >> rpt TOP_CASE_TAC
+  >> fs [i2c_hwext_notif_rel_def, i2c_req_error_def, w2n_eq_iff_eq_n2w]
+QED
+
+Theorem i2c_req_fext_inner:
+  let
+    i2c = mk_module (procs (ffs1 ++ [i2c_reg_top_ff] ++ ffs2)) (procs ([i2c_reg_top_comb_1] ++ combs ++ [i2c_reg_top_comb_2])) i2c_circuit_init;
+    req = reg_req_decode (fext n).reg_req_i: 7 reg_req;
+    s' = i2c fext fbits n;
+  in
+  (!proc fext s s'. MEM proc (ffs1 ++ ffs2 ++ combs) ==>
+    let
+      s'' = proc fext s s'
+    in
+      s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
+      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid)
+  ==> s'.addr = req.addr /\ s'.write = req.write /\ s'.wdata = req.wdata
+    /\ s'.wstrb = req.wstrb /\ s'.valid = req.valid
+Proof
+  qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
+  >> qpat_abbrev_tac `cstep = procs (_ ++ [i2c_reg_top_comb_2])`
+  >> `?s'. mk_circuit sstep cstep (i2c_circuit_init fbits) fext n = cstep (fext n) s' s'` by irule mk_circuit_cstep
+  >> simp [mk_module_def]
+  >> unabbrev_all_tac
+  >> simp [procs_append, procs_def, i2c_reg_top_comb_2_flat]
+  >> simp [procs_unchanged, i2c_reg_top_comb_1_flat]
+QED
+
+Theorem i2c_req_fext = SIMP_RULE (pure_ss ++ boolSimps.LET_ss) [] i2c_req_fext_inner;
+
+Theorem i2c_rsp_i2c_req_error_inner:
+  let
+    i2c = mk_module (procs (ffs1 ++ [i2c_reg_top_ff] ++ ffs2)) (procs ([i2c_reg_top_comb_1] ++ combs ++ [i2c_reg_top_comb_2])) i2c_circuit_init;
+    req = reg_req_decode (fext n).reg_req_i: 7 reg_req;
+  in
+  (!proc fext s s'. MEM proc (ffs1 ++ ffs2 ++ combs) ==>
+    let
+      s'' = proc fext s s'
+    in
+      s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
+      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid)
+  ==> word_bit 1 (i2c fext fbits n).reg_rsp_o = i2c_req_error req
+Proof
+  qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
+  >> qpat_abbrev_tac `cstep = procs (_ ++ [i2c_reg_top_comb_2])`
+  >> `?s'. mk_circuit sstep cstep (i2c_circuit_init fbits) fext n = cstep (fext n) s' s'` by irule mk_circuit_cstep
+  >> simp [mk_module_def]
+  >> unabbrev_all_tac
+  >> simp [procs_append, procs_def, i2c_reg_top_comb_2_flat]
+  >> simp [procs_unchanged, i2c_reg_top_comb_1_flat, word_bit_bit_field_insert, word_bit_def, FCP_APPLY_UPDATE_THM_2]
+QED
+
+Theorem i2c_rsp_i2c_req_error = SIMP_RULE (pure_ss ++ boolSimps.LET_ss) [] i2c_rsp_i2c_req_error_inner;
+
 Theorem i2c_reg_top_i2c_state_rel_step:
   let
     i2c = mk_module (procs (ffs1 ++ [i2c_reg_top_ff] ++ ffs2)) (procs ([i2c_reg_top_comb_1] ++ combs ++ [i2c_reg_top_comb_2])) i2c_circuit_init;
@@ -266,7 +346,21 @@ Theorem i2c_reg_top_i2c_state_rel_step:
     else
       SUM_MAP I (\(notif, rdata). (I, notif, SOME rdata)) (i2c_read st nb (w2n req.addr));
   in
-  (!proc fext s s'. MEM proc (ffs1 ++ ffs2 ++ combs) ==> (proc fext s s').reg2hw = s'.reg2hw)
+  (!proc fext s s'. MEM proc (ffs1 ++ ffs2 ++ combs) ==>
+    let
+      s'' = proc fext s s'
+    in
+      s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
+      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid)
+  (* Not strictly a requirement, but makes this easier to state (we don't have to
+   * add an i2c_reg_top_ff into the i2c_hw_write_rel condition).
+   *
+   * Besides, blocking synchronous writes are bad practice anyway. (They're forced
+   * to be blocking by the fact we reference them as s'.hw2reg - it's an annoying
+   * limitation that you have to know whether something's combinationally or
+   * synchronously assigned when using it...) *)
+  /\ (!proc fext s s'. MEM proc ffs1 ==> (proc fext s s').hw2reg = s'.hw2reg)
   /\ (!st fext fbits n notif. i2c_state_rel st (i2c fext fbits n)
     (* TODO: the other way to do this would be to compare notif to
      * (i2c_reg_top_comb_1 (fext n) (i2c fext fbits n) (i2c fext fbits n)).reg2hw;
@@ -275,13 +369,115 @@ Theorem i2c_reg_top_i2c_state_rel_step:
      *
      * So, we can try switching to that if this way turns out to be annoying. *)
     /\ i2c_hwext_notif_rel notif (reg_req_decode (fext n).reg_req_i)
-    ==> ?fnums. i2c_core_state_rel (i2c_tick notif (st with fnums := fnums)) (i2c fext fbits (SUC n)))
+    (* Note: somewhat counterintuitively, this actually shows that
+     * i2c_hwext_read_rel is true for the next clock cycle, not this one. *)
+    (* TODO: is this true? when the clock edge occurs, the change in `regs` may
+     * cause the values of hwext registers (or other combinational signals using
+     * `reg2hw.q`) to change, affecting i2c_core_state_rel.
+     *
+     * So, this actually only becomes true after `st_upd` is applied.
+     *
+     * That means we need to get a `st_upd` in here, but it can't be the same one
+     * since that depends on a different `fext`. *)
+    ==> ?fnums. i2c_core_state_rel (i2c_tick notif (st with fnums := fnums)) (i2c fext fbits (SUC n))
+      (* Note: this is only true because st_upd hasn't run yet, otherwise software
+       * might have overwritten some stuff and made this false. *)
+      /\ i2c_hw_write_rel (st with fnums := fnums).regs (i2c_tick notif (st with fnums := fnums)).regs
+                          (i2c fext fbits n).hw2reg)
   /\ i2c_state_rel st (i2c fext fbits n)
   /\ (!i. word_bit i req.wstrb <=> i < nb)
   /\ oracle_res = INR (st_upd, notif, rdata)
   ==> ?fnums. i2c_state_rel (st_upd (i2c_tick notif (st with fnums := fnums))) (i2c fext fbits (SUC n))
 Proof
-  cheat
+  asm_simp_tac (pure_ss ++ boolSimps.LET_ss) []
+  >> rpt strip_tac
+
+  >> drule_all_then assume_tac i2c_reg_top_rsp_correct
+  >> drule_then assume_tac i2c_req_fext
+  >> drule_then assume_tac i2c_rsp_i2c_req_error
+
+  >> qabbrev_tac `req = reg_req_decode (fext n).reg_req_i: 7 reg_req`
+
+  >> `i2c_hwext_notif_rel notif req`
+     by (Cases_on `req.valid`
+         >- (Cases_on `req.write`
+             >- (Cases_on `i2c_write st nb (w2n req.addr) req.wdata`
+                 >- fs []
+                 >- (Cases_on `y`
+                     >> drule_all i2c_write_i2c_hwext_notif_rel
+                     >> fs []))
+             >- (Cases_on `i2c_read st nb (w2n req.addr)`
+                 >- fs []
+                 >- (Cases_on `y`
+                     >> drule_all i2c_read_i2c_hwext_notif_rel
+                     >> fs [])))
+         >- fs [i2c_hwext_notif_rel_def, i2c_req_error_def])
+
+  (* We need to do this in all cases so we can pick the value of `fnums`. *)
+  >> fs [Abbr `req`]
+  >> qpat_x_assum `!st fext fbits n notif. _ ==> ?fnums. _`
+       $ drule_all_then
+       $ qx_choose_then `fnums` assume_tac
+  >> qabbrev_tac `req = reg_req_decode (fext n).reg_req_i: 7 reg_req`
+  >> qexists `fnums`
+
+  >> simp [i2c_state_rel_def]
+  >> rpt strip_tac
+
+  (* regs *)
+  >- (simp [mk_module_def, mk_circuit_def, procs_def, procs_append, i2c_reg_top_comb_2_flat]
+      >> simp [procs_unchanged, i2c_reg_top_comb_1_flat]
+
+      >> `~(req.valid /\ req.write) /\ st_upd = I
+            \/ req.valid /\ req.write /\ i2c_write st nb (w2n req.addr) req.wdata = INR (st_upd, notif)`
+         by (Cases_on `req.valid`
+             >- (Cases_on `req.write`
+                 >- (Cases_on `i2c_write st nb (w2n req.addr) req.wdata`
+                     >- fs []
+                     >- (Cases_on `y` >> fs []))
+                 >- (Cases_on `i2c_read st nb (w2n req.addr)`
+                     >- fs []
+                     >- (Cases_on `y` >> fs [])))
+             >- fs [])
+
+      >> simp [GSYM mk_module_def]
+      >> qpat_abbrev_tac `i2c = mk_module _ _ _`
+
+      >- (simp [i2c_reg_top_ff_flat, procs_unchanged]
+          (* TODO: auto-generate this (probably need to make a new *Lib.sml to put it in...) *)
+          >> simp [i2c_regs_component_equality, i2c_intr_state_component_equality, i2c_intr_enable_component_equality, i2c_ctrl_component_equality, i2c_fdata_component_equality, i2c_fifo_ctrl_component_equality, i2c_ovrd_component_equality, i2c_timing0_component_equality, i2c_timing1_component_equality, i2c_timing2_component_equality, i2c_timing3_component_equality, i2c_timing4_component_equality, i2c_timeout_ctrl_component_equality, i2c_target_id_component_equality, i2c_txdata_component_equality, i2c_host_timeout_ctrl_component_equality]
+          >> gs [i2c_state_rel_def, i2c_tick_hwro_unchanged, i2c_hw_write_rel_def])
+      >- (drule i2c_write_st_upd_alt
+          >> simp [i2c_reg_top_ff_flat, procs_unchanged]
+          >> fs [i2c_state_rel_def, i2c_tick_hwro_unchanged, i2c_hw_write_rel_def, reg_rsp_decode_def, w2n_eq_iff_eq_n2w]))
+  (* buffered_notif *)
+  >- (simp [mk_module_def, mk_circuit_def, procs_def, procs_append, i2c_reg_top_comb_2_flat]
+      >> simp [procs_unchanged, i2c_reg_top_comb_1_flat]
+      >> simp [i2c_notif_rel_def]
+      >> simp [i2c_reg_top_ff_flat, procs_unchanged, GSYM mk_module_def]
+      >> fs [reg_rsp_decode_def]
+
+      >> `~(req.valid /\ req.write) /\ st_upd = I
+            \/ req.valid /\ req.write /\ i2c_write st nb (w2n req.addr) req.wdata = INR (st_upd, notif)`
+         by (Cases_on `req.valid`
+             >- (Cases_on `req.write`
+                 >- (Cases_on `i2c_write st nb (w2n req.addr) req.wdata`
+                     >- fs []
+                     >- (Cases_on `y` >> fs []))
+                 >- (Cases_on `i2c_read st nb (w2n req.addr)`
+                     >- fs []
+                     >- (Cases_on `y` >> fs [])))
+             >- fs [])
+
+      >- simp [i2c_tick_buffered_notif_NONE]
+      >- (drule i2c_write_st_upd_alt
+          >> simp []
+          >> rpt (IF_CASES_TAC >- fs [w2n_eq_iff_eq_n2w])
+          >> fs [i2c_tick_buffered_notif_NONE, w2n_eq_iff_eq_n2w]))
+  (* i2c_core_state_rel *)
+  (* We need to prove that i2c_core_state_rel is unaffected by changes in regs and
+   * buffered_notif;  *)
+  >- cheat
 QED
 
 val _ = export_theory ();

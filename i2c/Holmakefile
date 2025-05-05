@@ -9,6 +9,7 @@ OPENTITAN_PERIPHERALS = $(shell bender -d $(CHESHIREDIR) path opentitan_peripher
 CHESHIRE_INCDIRS = $(shell bender -d $(CHESHIREDIR) script template_json | jq -r .all_incdirs.[])
 CHESHIRE_INC = $(patsubst %, -I%, $(CHESHIRE_INCDIRS))
 
+# TODO: stop using shell redirection so that the *.sml files don't need to be manually deleted if the python scripts fail.
 i2cRegsScript.sml: ../util/gen_regs.py ../util/common.py
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_regs \

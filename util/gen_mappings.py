@@ -16,6 +16,10 @@ def oracle_field_value(reg: Register, field: Field):
         return f"st.regs.{name(reg)}.{name(field)}"
 
 
+def oracle_next_field_value(reg: Register, field: Field):
+    return f"st'.regs.{name(reg)}.{name(field)}"
+
+
 def reg_read_case(reg: Register):
     if any(field.hwre for field in reg.fields):
         read_notif = f"SOME (Read {name(reg)}_read)"
@@ -28,7 +32,7 @@ def reg_write_case(reg: Register):
     writable = any(field.swaccess.allows_write() for field in reg.fields)
 
     write_notif = "NONE"
-    buffered_write_notif = "NONE"
+    buffered_write_notif = None
     if any(field.hwqe for field in reg.fields):
         # TODO: I don't think this works correctly in the case of ro + hwqe + hwext, but
         # we don't care about that case anyway.
@@ -39,7 +43,7 @@ def reg_write_case(reg: Register):
 
     if writable and not reg.hwext:
         field_updates = (
-            f"{name(field)} := {new_field_value(reg, field, 'wdata', oracle_field_value)};"
+            f"{name(field)} := {new_field_value(reg, field, 'wdata', oracle_next_field_value)};"
             for field in reg.fields
             if field.swaccess.allows_write()
         )
@@ -48,8 +52,7 @@ def reg_write_case(reg: Register):
         new_state = f"""st' with <|
           regs := st'.regs with {name(reg)} := st'.regs.{name(reg)} with <|
             {"\n            ".join(field_updates)}
-          |>;
-          buffered_notif := {buffered_write_notif};
+          |>;{"" if buffered_write_notif is None else f"\n          buffered_notif := {buffered_write_notif};"}
         |>"""
     else:
         new_state = "st'"
@@ -74,11 +77,22 @@ read_cases.append("_ => INL FFI_failed")
 write_cases.append("_ => INL FFI_failed")
 
 
+def field_st_upd_assn(reg: Register, field: Field):
+    return rf"{name(field)} := if offset = {hex(reg.offset)} then {new_field_value(reg, field, 'wdata', oracle_next_field_value)} else st'.regs.{name(reg)}.{name(field)};"
+
+
+def reg_st_upd_assn(reg: Register):
+    return f"""{name(reg)} := st'.regs.{name(reg)} with <|
+        {"\n        ".join(field_st_upd_assn(reg, field) for field in reg.fields if field.swaccess.allows_write())}
+      |>;"""
+
+
 mappings = f"""\
 open HolKernel Parse boolLib bossLib;
+open BasicProvers;
 open alignmentTheory;
 open ffiTheory;
-open {ip.name}CoreTheory;
+open {ip.name}CoreTheory {ip.name}RegsTheory;
 
 val _ = new_theory("{ip.name}Mappings");
 
@@ -91,6 +105,25 @@ Definition {ip.name}_write_def:
   {ip.name}_write (st: {ip.name}_state) (nb: num) (offset: num) (wdata: word32) = case offset of
     {"\n  | ".join(write_cases)}
 End
+
+Theorem {ip.name}_write_st_upd_alt:
+  {ip.name}_write st nb offset wdata = INR (st_upd, notif) ==>
+  st_upd = \\st'. st' with <|
+    regs := st'.regs with <|
+        {"\n      ".join(reg_st_upd_assn(reg) for reg in block.entries if not reg.hwext and any(field.swaccess.allows_write() for field in reg.fields))}
+    |>;
+    buffered_notif := case offset of
+      {"\n    | ".join(f"{hex(reg.offset)} => SOME {name(reg)}_write" for reg in block.entries if not reg.hwext and any(field.hwqe for field in reg.fields))}
+    | _ => st'.buffered_notif;
+  |>
+Proof
+  pure_rewrite_tac [{ip.name}_write_def]
+  >> rpt (TOP_CASE_TAC
+          >- (simp []
+              >> strip_tac
+              >> irule EQ_EXT
+              >> simp [{ip.name}_state_component_equality, {ip.name}_regs_component_equality, {", ".join(f"{ip.name}_{name(reg)}_component_equality" for reg in block.entries if not reg.hwext)}]))
+QED
 
 Definition {ip.name}_addrs_def:
   (* TODO: I think sh_memaddrs is supposed to only contain word-aligned addresses (which is, rather counterintuitively, what byte_align does), but we should double-check. *)
