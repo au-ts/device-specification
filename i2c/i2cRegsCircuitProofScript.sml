@@ -437,54 +437,10 @@ Proof
   simp [cheshire_req_def, i2c_read_fnums, i2c_write_fnums]
 QED
 
-Theorem i2c_st_upd_unused_fnums:
-  !st valid write nb offset wdata st_upd notif rdata st'.
-  cheshire_req i2c_read i2c_write st req = INR (st_upd, notif, rdata) ==>
-  unused_fnums_ignored st_upd st'
-Proof
-  rpt strip_tac
-  >> drule_then strip_assume_tac cheshire_req_INR_cases
-  >> simp [unused_fnums_ignored_def]
-  >> qexists `0`
-  >- simp [SF ETA_ss]
-  >- simp [SF ETA_ss]
-  >- (drule i2c_write_st_upd_alt >> simp [SF ETA_ss])
-QED
-
 Theorem OUTR_SUM_MAP:
   !f g z. ISR z ==> OUTR (SUM_MAP f g z) = g (OUTR z)
 Proof
   Cases_on `z` >> simp []
-QED
-
-Theorem cheshire_run_unused_fnums:
-  !reqs st.
-  (!st req. MEM req reqs ==> ISR (cheshire_req i2c_read i2c_write st req)) ==>
-  unused_fnums_ignored (\st. FST (OUTR (cheshire_run i2c_tick i2c_read i2c_write st reqs))) st
-Proof
-  Induct_on `reqs`
-  >- (simp [unused_fnums_ignored_def]
-      >> rpt strip_tac
-      >> qexists `0`
-      >> simp [cheshire_run_def, SF ETA_ss])
-  >- (simp [cheshire_run_def]
-      >> rpt strip_tac
-      >> `?oracle_res. cheshire_req i2c_read i2c_write st h = INR oracle_res` by simp [GSYM sumExtraTheory.ISR_exists]
-      >> `!st'. (?fnums. st' = st with fnums := fnums) ==> cheshire_req i2c_read i2c_write st' h = INR oracle_res`
-         by (rpt strip_tac >> simp [i2c_cheshire_req_fnums])
-      >> PairCases_on `oracle_res`
-      >> simp [Cong unused_fnums_ignored_cong]
-      >> `(λst'. FST (OUTR (SUM_MAP I (I ## CONS oracle_res2)
-            (cheshire_run i2c_tick i2c_read i2c_write (oracle_res0 (i2c_tick oracle_res1 st')) reqs)))) =
-          (λst'. FST (OUTR (SUM_MAP I (I ## CONS oracle_res2)
-            (cheshire_run i2c_tick i2c_read i2c_write st' reqs))))
-          o oracle_res0
-          o i2c_tick oracle_res1` by simp [combinTheory.o_DEF]
-      >> simp []
-      >> rpt (irule unused_fnums_ignored_comp >> rpt strip_tac)
-      >- simp [cheshire_run_cheshire_req_ISR, OUTR_SUM_MAP]
-      >- (drule i2c_st_upd_unused_fnums >> simp [])
-      >- simp [i2c_tick_unused_fnums])
 QED
 
 Theorem i2c_st_upd_fnums_fupd:
@@ -525,15 +481,14 @@ Proof
       >> PairCases_on `oracle_res`
       >> fs [i2c_cheshire_req_fnums]
 
-      >> qspecl_then [`oracle_res1`, `st`] assume_tac i2c_tick_unused_fnums
-      >> fs [unused_fnums_ignored_def]
+      >> qspecl_then [`oracle_res1`, `st`] strip_assume_tac i2c_tick_unused_fnums
       >> qrefine `n + m`
       >> simp []
       >> drule_then assume_tac i2c_st_upd_fnums_fupd
       >> simp []
       >> last_x_assum $ qspec_then `oracle_res0 (i2c_tick oracle_res1 st)` strip_assume_tac
       >> qexists `n'`
-      >> drule_then assume_tac unused_fnums_ignored_fnums_val_inner
+      >> drule_then assume_tac unused_fnums_ignored_fnums_val
       >> drule_then assume_tac i2c_st_upd_fnums
       >> fs []
       >> qexistsl [`st'`, `oracle_res2::rdatas`]
