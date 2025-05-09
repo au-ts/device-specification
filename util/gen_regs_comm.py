@@ -181,7 +181,7 @@ Definition {ip.name}_hwext_read_rel_def:
   {" /\\\n  ".join(f"hw2reg.{name(reg)}.{name(field)}_d = {ip.name}_get_{name(reg)}_{name(field)} st" for reg in block.entries for field in reg.fields if reg.hwext and any(field.swaccess.allows_read() for field in reg.fields))}
 End
 
-(* Whether the transitions from `regs` -> `regs'` is in accordance with the
+(* Whether the transition from `regs` -> `regs'` is in accordance with the
  * instructions in `hw2reg`. *)
 Definition {ip.name}_hw_write_rel_def:
   (* hw2reg is from the same clock cycle as `regs`, not `regs'`. *)

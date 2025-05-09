@@ -469,7 +469,6 @@ Proof
 QED
 
 Theorem unused_fnums_ignored_fnums_val:
-  !st n.
   (!fnums. (!i. i < n ==> fnums i = st.fnums i)
     ==> f (st with fnums := fnums) = f st with fnums := (\i. fnums (i + n)))
   ==> (f st).fnums = (\i. st.fnums (i + n))
