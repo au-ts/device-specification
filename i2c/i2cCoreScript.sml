@@ -459,4 +459,82 @@ Proof
   simp [i2c_tick_def]
 QED
 
+(* TODO: remove this, it's mostly vestigial from proving
+ * cheshire_run_unused_fnums only to realise it wasn't sufficient because we
+ * need to prove that `rdatas` is unaffected too. *)
+Definition unused_fnums_ignored_def:
+  unused_fnums_ignored (f: i2c_state -> i2c_state) st =
+  ?n. !fnums. (!i. i < n ==> fnums i = st.fnums i) ==>
+  f (st with fnums := fnums) = f st with fnums := (\i. fnums (i + n))
+End
+
+Theorem unused_fnums_ignored_fnums_val_inner:
+  !st n.
+  (!fnums. (!i. i < n ==> fnums i = st.fnums i)
+    ==> f (st with fnums := fnums) = f st with fnums := (\i. fnums (i + n)))
+  ==> (f st).fnums = (\i. st.fnums (i + n))
+Proof
+  rpt strip_tac
+  >> first_x_assum $ qspec_then `st.fnums` assume_tac
+  >> `st with fnums := st.fnums = st` by simp [theorem "i2c_state_component_equality"]
+  >> fs []
+  >> last_x_assum (fn thm => simp [Once thm])
+QED
+
+Theorem unused_fnums_ignored_fnums_val:
+  !f st. unused_fnums_ignored f st ==> ?n. (f st).fnums = (\i. st.fnums (i + n))
+Proof
+  simp [unused_fnums_ignored_def]
+  >> rpt strip_tac
+  >> qexists `n`
+  >> irule unused_fnums_ignored_fnums_val_inner
+  >> simp []
+QED
+
+Theorem unused_fnums_ignored_comp:
+  !f g st. unused_fnums_ignored g st /\ unused_fnums_ignored f (g st) ==> unused_fnums_ignored (f o g) st
+Proof
+  simp [unused_fnums_ignored_def]
+  >> rpt strip_tac
+  >> qexists `n + n'`
+  >> rpt strip_tac
+  >> qpat_assum `!fnums. _ => f _ = _` $ qspec_then `fnums` assume_tac
+  >> qpat_x_assum `!fnums. _ => f _ = _` $ qspec_then `(λi. fnums (i + n))` assume_tac
+  >> qpat_assum `!fnums. _ => g _ = _` $ qspec_then `fnums` assume_tac
+  >> dxrule_then assume_tac unused_fnums_ignored_fnums_val_inner
+  >> gs []
+QED
+
+Theorem unused_fnums_ignored_cong:
+  !f f' st st'.
+  st = st' /\
+  (* We want to somehow add any theorems that are ambiently available about st (which aren't affected by changes in fnums) to the context here. *)
+  (* Well, we can pretty easily add the assumption  *)
+  (!st''. (?fnums. st'' = st' with fnums := fnums) ==> f st'' = f' st'') ==>
+  unused_fnums_ignored f st = unused_fnums_ignored f' st'
+Proof
+  simp [unused_fnums_ignored_def]
+  >> rpt strip_tac
+  >> iff_tac
+  >> (rpt strip_tac
+      >> qexists `n`
+      >> rpt strip_tac
+      (* Make it so DEP_REWRITE_TAC can rewrite this. *)
+      >> qpat_x_assum `!fnums. (!i. _) => _` $ qspec_then `fnums` $ mp_tac
+      >> last_x_assum (fn thm => dep_rewrite.DEP_REWRITE_TAC [thm])
+      >> simp []
+      >> rpt strip_tac
+      >- (qexists `fnums` >> simp [])
+      >- (qexists `st'.fnums` >> simp [theorem "i2c_state_component_equality"]))
+QED
+
+Theorem i2c_tick_unused_fnums:
+  !notif st. unused_fnums_ignored (i2c_tick notif) st
+Proof
+  simp [unused_fnums_ignored_def]
+  >> rpt strip_tac
+  >> qexists `2`
+  >> simp [i2c_tick_def, SF ETA_ss]
+QED
+
 val _ = export_theory();

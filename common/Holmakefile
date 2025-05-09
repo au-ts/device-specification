@@ -1,1 +1,1 @@
-INCLUDES = $(CAKEMLDIR)/semantics/ffi $(CAKEMLDIR)/pancake/semantics
+INCLUDES = $(CAKEMLDIR)/semantics/ffi $(CAKEMLDIR)/pancake/semantics $(HARDWAREDIR)

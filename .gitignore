@@ -4,5 +4,8 @@
 
 *Theory.sig
 
+__pycache__
+
 *~
 \#*\#
+.hol-vscode

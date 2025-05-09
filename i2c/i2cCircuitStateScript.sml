@@ -73,4 +73,13 @@ Definition i2c_state_rel_def:
     i2c_core_state_rel mstate cstate
 End
 
+Theorem i2c_state_rel_fnums:
+  !st fnums. i2c_state_rel (st with fnums := fnums) = i2c_state_rel st
+Proof
+  rpt strip_tac
+  >> irule EQ_EXT
+  >> simp [i2c_state_rel_def, i2c_notif_rel_def, i2c_core_state_rel_def, i2c_hwext_read_rel_def]
+  >> simp [i2c_get_status_fmtfull_def, i2c_get_status_rxfull_def, i2c_get_status_fmtempty_def, i2c_get_status_hostidle_def, i2c_get_status_targetidle_def, i2c_get_status_rxempty_def, i2c_get_status_txfull_def, i2c_get_status_acqfull_def, i2c_get_status_txempty_def, i2c_get_status_acqempty_def, i2c_get_rdata_rdata_def, i2c_get_fifo_status_fmtlvl_def, i2c_get_fifo_status_txlvl_def, i2c_get_fifo_status_rxlvl_def, i2c_get_fifo_status_acqlvl_def, i2c_get_val_scl_rx_def, i2c_get_val_sda_rx_def, i2c_get_acqdata_abyte_def, i2c_get_acqdata_signal_def]
+QED
+
 val _ = export_theory ();
