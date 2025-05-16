@@ -76,7 +76,7 @@ Datatype:
     counter : 20 word ;
     pend_restart : bool;
     trans_started : bool;
-    bit_index : 2 word ;
+    bit_index : 3 word ;
     stretch_idle_cnt : 32 word;
     byte_index : 9 word;
   |>
