@@ -13,7 +13,6 @@ Datatype:
   | HoldDevAck
 End
 
-(* HostClock abstracts HostClockLowAck and Host ClockPulseAck *)
 Datatype:
   rxState =
    ReadClockLow
