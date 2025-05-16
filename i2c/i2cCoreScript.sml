@@ -79,6 +79,9 @@ Datatype:
     bit_index : 3 word ;
     stretch_idle_cnt : 32 word;
     byte_index : 9 word;
+    read_byte : 8 word;
+    read_byte_clr: bool;
+    shift_data_en: bool;
   |>
 End
 
@@ -385,6 +388,16 @@ Definition i2c_tick_def:
                                           else if NULL st.fmt_fifo then Idle
                                           else Active;
 
+      read_byte_clr' = ( st.fsm_state = Receiving ReadHoldBit ∧ st.counter = 1w ∧ st.bit_index = 0w );
+      shift_data_en' = ( st.fsm_state = Receiving ReadClockPulse ∧ st.counter = 1w ) ;
+      (* fnums 1 used to indicate sda_i *)
+      sda_i : 1 word = n2w $ fnums 1;
+      read_byte' : 8 word = if read_byte_clr' then 0w
+                            else if shift_data_en' then
+                              ((6 >< 0) st.read_byte : 7 word) @@ sda_i
+                            else
+                              st.read_byte;
+
       (* `Pass` is set to 0, which means that a value cannot be removed from the FIFO
        * on the same clock cycle that it is inserted, and so this needs to go first so
        * that it can't see any newly-inserted values. *)
@@ -392,13 +405,10 @@ Definition i2c_tick_def:
 
       (* The FIFO can't insert into a spot that was freed in the same clock cycle, so
        * we need to use `st.rx_fifo` rather than `rx_fifo'`. *)
-      (* fnums 1 is used to model the data being read *)
-      rx_fifo'' = if st.fsm_state = Receiving ReadHoldBit ∧ fsm_state' = Receiving HostClockLowAck
-                  then flip SNOC rx_fifo' $ n2w $ fnums 1 else rx_fifo';
+      rx_fifo'' = if st.fsm_state = Receiving ReadHoldBit ∧ fsm_state' = Receiving HostClockLowAck ∧ LENGTH st.rx_fifo < 64
+                  then flip SNOC rx_fifo' $ st.read_byte else rx_fifo';
 
-
-      (* fnums 2 used to indicate sda_i *)
-      regs' = if (st.fsm_state = Transmitting ClockPulseAck ∧ ¬ (word_bit 12 $ HD st.fmt_fifo) ∧ fnums 2 ≠ 0)
+      regs' = if (st.fsm_state = Transmitting ClockPulseAck ∧ ¬ (word_bit 12 $ HD st.fmt_fifo) ∧ word_bit 0 sda_i)
               then st.regs with <| intr_state := (st.regs.intr_state with <| nak := 1w |>) |>
               else if ( st.fsm_state = Stopping HoldStop
                       ∨ st.fsm_state = Starting SetupStart ∧ log_start ∧ st.pend_restart)
@@ -419,7 +429,7 @@ Definition i2c_tick_def:
                    else if bit_decr then st.bit_index - 1w
                    else st.bit_index;
 
-      fnums' = λn. fnums (n + 3);
+      fnums' = λn. fnums (n + 2);
     in
       <|
         fnums := fnums';
@@ -434,6 +444,9 @@ Definition i2c_tick_def:
         bit_index := bit_index';
         stretch_idle_cnt := stretch_idle_cnt';
         byte_index := byte_index';
+        read_byte := read_byte';
+        read_byte_clr := read_byte_clr';
+        shift_data_en := shift_data_en';
       |>
 End
 
