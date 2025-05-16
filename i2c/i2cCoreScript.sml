@@ -85,7 +85,7 @@ End
 
 (* Stubs *)
 Definition i2c_get_status_fmtfull_def:
-  i2c_get_status_fmtfull (st: i2c_state) = if LENGTH st.fmt_fifo > 64 then 1w else 0w
+  i2c_get_status_fmtfull (st: i2c_state) = if LENGTH st.fmt_fifo >= 64 then 1w else 0w
 End
 
 Definition i2c_get_status_rxfull_def:
