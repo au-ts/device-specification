@@ -82,6 +82,8 @@ Datatype:
     read_byte : 8 word;
     read_byte_clr: bool;
     shift_data_en: bool;
+    scl_rx_val : 16 word;
+    sda_rx_val : 16 word;
   |>
 End
 
@@ -100,11 +102,11 @@ Definition i2c_get_status_fmtempty_def:
 End
 
 Definition i2c_get_status_hostidle_def:
-  i2c_get_status_hostidle (st: i2c_state) = 0w
+  i2c_get_status_hostidle (st: i2c_state) = (st.fsm_state = Idle)
 End
 
 Definition i2c_get_status_targetidle_def:
-  i2c_get_status_targetidle (st: i2c_state) = 0w
+  i2c_get_status_targetidle (st: i2c_state) = 1w
 End
 
 Definition i2c_get_status_rxempty_def:
@@ -150,11 +152,11 @@ Definition i2c_get_fifo_status_acqlvl_def:
 End
 
 Definition i2c_get_val_scl_rx_def:
-  i2c_get_val_scl_rx (st: i2c_state) = 0w
+  i2c_get_val_scl_rx (st: i2c_state) = st.scl_rx_val
 End
 
 Definition i2c_get_val_sda_rx_def:
-  i2c_get_val_sda_rx (st: i2c_state) = 0w
+  i2c_get_val_sda_rx (st: i2c_state) = st.sda_rx_val
 End
 
 Definition i2c_get_acqdata_abyte_def:
@@ -220,7 +222,6 @@ Definition i2c_tick_def:
                  setup_stop  := (w2w st.regs.timing1.t_r : 20 word) + w2w st.regs.timing4.tsu_sto ;
                  hold_stop   := (w2w st.regs.timing1.t_r : 20 word) + w2w st.regs.timing4.t_buf - w2w st.regs.timing2.tsu_sta ;
               |>;
-
       curr_delay = case st.fsm_state of
                      Receiving ReadClockLow      => delay.clock_low
                    | Receiving ReadClockPulse    => delay.clock_pulse
@@ -285,8 +286,9 @@ Definition i2c_tick_def:
                ∨ st.fsm_state = PopFmtFifo ∧ ¬fmt_flag_stop_after
                );
 
-      scl_i = (fnums 0 ≠ 0);
-      stretch_idle_cnt' = if stretch_en ∧ scl_d ∧ ¬scl_i then st.stretch_idle_cnt + 1w else 0w;
+      scl_i : 1 word = n2w $ fnums 0;
+      scl_rx_val' : 16 word = ((14 >< 0) st.scl_rx_val : 15 word) @@ scl_i;
+      stretch_idle_cnt' = if stretch_en ∧ scl_d ∧ ¬(word_bit 0 scl_i) then st.stretch_idle_cnt + 1w else 0w;
       counter' = if load_tcount then curr_delay
                  else if st.stretch_idle_cnt = 0w then st.counter - 1w
                  else st.counter;
@@ -299,7 +301,6 @@ Definition i2c_tick_def:
       byte_index' = if byte_clr then byte_num
                     else if byte_decr then st.byte_index - 1w
                     else st.byte_index;
-
       fsm_state' = case st.fsm_state of
                      Idle              => if st.regs.ctrl.enablehost = 1w ∧ ¬ NULL st.fmt_fifo then Active
                                           else Idle
@@ -387,11 +388,11 @@ Definition i2c_tick_def:
                    | PopFmtFifo        => if st.regs.ctrl.enablehost = 0w then Stopping ClockStop
                                           else if NULL st.fmt_fifo then Idle
                                           else Active;
-
       read_byte_clr' = ( st.fsm_state = Receiving ReadHoldBit ∧ st.counter = 1w ∧ st.bit_index = 0w );
       shift_data_en' = ( st.fsm_state = Receiving ReadClockPulse ∧ st.counter = 1w ) ;
       (* fnums 1 used to indicate sda_i *)
       sda_i : 1 word = n2w $ fnums 1;
+      sda_rx_val' : 16 word = ((14 >< 0) st.sda_rx_val : 15 word) @@ sda_i;
       read_byte' : 8 word = if read_byte_clr' then 0w
                             else if shift_data_en' then
                               ((6 >< 0) st.read_byte : 7 word) @@ sda_i
@@ -447,6 +448,8 @@ Definition i2c_tick_def:
         read_byte := read_byte';
         read_byte_clr := read_byte_clr';
         shift_data_en := shift_data_en';
+        scl_rx_val := scl_rx_val';
+        sda_rx_val := sda_rx_val';
       |>
 End
 
