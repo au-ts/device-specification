@@ -102,7 +102,7 @@ Definition i2c_get_status_fmtempty_def:
 End
 
 Definition i2c_get_status_hostidle_def:
-  i2c_get_status_hostidle (st: i2c_state) = (st.fsm_state = Idle)
+  i2c_get_status_hostidle (st: i2c_state) = if (st.fsm_state = Idle) then 1w else 0w
 End
 
 Definition i2c_get_status_targetidle_def:
