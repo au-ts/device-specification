@@ -73,14 +73,12 @@ Proof
 QED
 
 Theorem cheshire_wait_rx_fifo:
-  !st.
   let
     st' = cheshire_wait i2c_eat_fnum i2c_tick st
   in
     ?bytes. st'.rx_fifo = st.rx_fifo ++ bytes
 Proof
-  strip_tac
-  >> simp [cheshire_wait_def, i2c_eat_fnum]
+  simp [cheshire_wait_def, i2c_eat_fnum]
   >> ‘(\st'. ?bytes. st'.rx_fifo = st.rx_fifo ++ bytes) (FUNPOW (i2c_tick NONE) (st.fnums 0) (st with fnums := st.fnums o SUC))’ suffices_by simp []
   >> irule FUNPOW_invariant
   >> rw []
@@ -104,12 +102,11 @@ Theorem read_byte_correct:
       res = SOME (Return (ValWord (if NULL rx_fifo' then 0w else w2w (HD rx_fifo'))))
       /\ ?bytes'. st'.rx_fifo = (if NULL rx_fifo' then rx_fifo' else TL rx_fifo') ++ bytes'
 Proof
-  strip_tac
-  >> drule_all read_byte_result
-  >> strip_tac
+  rpt strip_tac
+  >> drule_all_then assume_tac read_byte_result
   >> rfs [i2c_oracle_read_def, cheshire_oracle_read_def, i2c_read_def, w2n_w2w]
   >> rfs [GSYM w2w_def, i2c_get_rdata_rdata_def, empty_locals_def, cheshire_wait_rx_fifo, i2c_tick_def]
-  >> qspec_then ‘s.ffi.ffi_state’ assume_tac cheshire_wait_rx_fifo
+  >> qspec_then `s.ffi.ffi_state` assume_tac $ Q.GEN `st` cheshire_wait_rx_fifo
   >> fs []
   >> qrefine ‘bytes’
   >> qspec_then ‘w2w: word8 -> word64’ assume_tac COND_RAND

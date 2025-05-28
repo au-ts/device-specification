@@ -108,17 +108,17 @@ Definition cheshire_run_def:
 End
 
 Theorem ISR_SUM_MAP:
-  !f g z. ISR (SUM_MAP f g z) = ISR z
+  ISR (SUM_MAP f g z) = ISR z
 Proof
   Cases_on `z` >> simp []
 QED
 
 Theorem cheshire_run_cheshire_req_ISR:
-  !st reqs.
   (!st req. MEM req reqs ==> ISR (cheshire_req read_fn write_fn st req)) ==>
   ISR (cheshire_run tick_fn read_fn write_fn st reqs)
 Proof
-  Induct_on `reqs`
+  qid_spec_tac `st`
+  >> Induct_on `reqs`
   >- simp [cheshire_run_def]
   >- (simp [cheshire_run_def]
       >> rpt strip_tac
@@ -128,7 +128,6 @@ Proof
 QED
 
 Theorem cheshire_run_SNOC:
-  !tick_fn read_fn write_fn st req reqs.
   cheshire_run tick_fn read_fn write_fn st (SNOC req reqs) =
   case cheshire_run tick_fn read_fn write_fn st reqs of
     INL x => INL x
@@ -137,7 +136,8 @@ Theorem cheshire_run_SNOC:
       INL x => INL x
     | INR (st_upd, notif, rdata) => INR (st_upd (tick_fn notif st'), SNOC rdata rdatas)
 Proof
-  Induct_on `reqs`
+  qid_spec_tac `st`
+  >> Induct_on `reqs`
   >- simp [cheshire_run_def]
   >- (simp [cheshire_run_def]
       >> rpt strip_tac
@@ -153,11 +153,13 @@ Proof
 QED
 
 Theorem cheshire_run_LENGTH_rdatas:
-  !tick_fn read_fn write_fn st reqs st' rdatas.
   cheshire_run tick_fn read_fn write_fn st reqs = INR (st', rdatas) ==>
   LENGTH rdatas = LENGTH reqs
 Proof
-  Induct_on `reqs`
+  qid_spec_tac `st`
+  >> qid_spec_tac `st'`
+  >> qid_spec_tac `rdatas`
+  >> Induct_on `reqs`
   >- simp [cheshire_run_def]
   >- (simp [cheshire_run_def]
       >> rpt strip_tac

@@ -454,17 +454,16 @@ Definition i2c_tick_def:
 End
 
 Theorem i2c_tick_buffered_notif_NONE:
-  !notif st. (i2c_tick notif st).buffered_notif = NONE
+  (i2c_tick notif st).buffered_notif = NONE
 Proof
   simp [i2c_tick_def]
 QED
 
 Theorem i2c_tick_unused_fnums:
-  !notif st. ?n. !fnums. (!i. i < n ==> fnums i = st.fnums i) ==>
+  ?n. !fnums. (!i. i < n ==> fnums i = st.fnums i) ==>
   i2c_tick notif (st with fnums := fnums) = i2c_tick notif st with fnums := (\i. fnums (i + n))
 Proof
-  rpt strip_tac
-  >> qexists `2`
+  qexists `2`
   >> simp [i2c_tick_def, SF ETA_ss]
 QED
 

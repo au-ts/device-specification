@@ -7,18 +7,19 @@ open cheshireCircuitTheory cheshireOracleTheory i2cCircuitTheory i2cCircuitState
 val _ = new_theory "i2cRegsCircuitProof";
 
 Theorem procs_append:
-  ∀ps qs fext s s'. procs (ps ++ qs) fext s s' = procs qs fext s (procs ps fext s s')
+  procs (ps ++ qs) fext s s' = procs qs fext s (procs ps fext s s')
 Proof
-  Induct_on `ps`
+  qid_spec_tac `s'`
+  >> Induct_on `ps`
   >> simp [procs_def]
 QED
 
 Theorem procs_unchanged:
-  !f ps fext s s'.
   (!p fext s s'. MEM p ps ⇒ f (p fext s s') = f s') ==>
   f (procs ps fext s s') = f s'
 Proof
-  Induct_on `ps`
+  qid_spec_tac `s'`
+  >> Induct_on `ps`
   >> simp [procs_def]
 QED
 
@@ -64,7 +65,7 @@ Proof
 QED
 
 Theorem eq_w2n_iff_eq_n2w:
-  !(w: 'a word) n. n < dimword (:'a) ==> (n = w2n w <=> w = n2w n)
+  n < dimword (:'a) ==> (n = w2n (w: 'a word) <=> w = n2w n)
 Proof
   rpt strip_tac
   >> iff_tac
@@ -72,7 +73,7 @@ Proof
 QED
 
 Theorem w2n_eq_iff_eq_n2w:
-  !(w: 'a word) n. n < dimword (:'a) ==> (w2n w = n <=> w = n2w n)
+  n < dimword (:'a) ==> (w2n (w: 'a word) = n <=> w = n2w n)
 Proof
   rpt strip_tac
   >> iff_tac
@@ -95,10 +96,9 @@ Proof
 QED
 
 Theorem mk_circuit_cstep:
-  ∀sstep cstep s fext n. ∃s'. mk_circuit sstep cstep s fext n = cstep (fext n) s' s'
+  ∃s'. mk_circuit sstep cstep s fext n = cstep (fext n) s' s'
 Proof
-  rpt strip_tac
-  >> Cases_on ‘n’
+  Cases_on ‘n’
   >- (qexists ‘s’ >> simp [mk_circuit_def])
   >- (qexists ‘(sstep (fext n') (mk_circuit sstep cstep s fext n')
                       (mk_circuit sstep cstep s fext n'))’
@@ -113,20 +113,19 @@ QED
 
 (* For some reason `simp` vehemently refuses to use the original `FCP_APPLY_UPDATE_THM`. *)
 Theorem FCP_APPLY_UPDATE_THM_2:
-  !(m: 'a['b]) a w b. b < dimindex (:'b) ==> (a :+ w) m ' b = if a = b then w else m ' b
+  b < dimindex (:'b) ==> (a :+ w) (m: 'a['b]) ' b = if a = b then w else m ' b
 Proof
   assume_tac fcpTheory.FCP_APPLY_UPDATE_THM >> simp []
 QED
 
 Theorem ISL_SUM_MAP:
-  !f g z. ISL (SUM_MAP f g z) = ISL z
+  ISL (SUM_MAP f g z) = ISL z
 Proof
   Cases_on `z` >> simp []
 QED
 
 Theorem nb_wstrb:
-  !(wstrb: word4) nb n.
-  (!i. word_bit i wstrb <=> i < nb) /\ n + 1 = dimindex (:'b) ==>
+  (!i. word_bit i (wstrb: word4) <=> i < nb) /\ n + 1 = dimindex (:'b) ==>
   (nb > n <=> ((n >< 0) wstrb: 'b word) = -1w)
 Proof
   rpt strip_tac
@@ -306,7 +305,6 @@ QED
 Theorem i2c_req_fext = SRULE [SF boolSimps.LET_ss] i2c_req_fext_inner;
 
 Theorem i2c_reg_top_i2c_state_rel_step_inner:
-  !ffs1 ffs2 combs fext fbits n st req_m st_upd notif rdata.
   let
     i2c = mk_module (procs (ffs1 ++ [i2c_reg_top_ff] ++ ffs2)) (procs ([i2c_reg_top_comb_1] ++ combs ++ [i2c_reg_top_comb_2])) i2c_circuit_init;
     req_c = reg_req_decode (fext n).reg_req_i: 7 reg_req;
@@ -416,7 +414,7 @@ QED
 Theorem i2c_reg_top_i2c_state_rel_step = SRULE [SF boolSimps.LET_ss] i2c_reg_top_i2c_state_rel_step_inner;
 
 Theorem i2c_read_fnums:
-  !st nb offset fnums. i2c_read (st with fnums := fnums) nb offset = i2c_read st nb offset
+  i2c_read (st with fnums := fnums) nb offset = i2c_read st nb offset
 Proof
   asm_simp_tac std_ss [i2c_read_def]
   >> asm_simp_tac std_ss [i2c_get_status_fmtfull_def, i2c_get_status_rxfull_def, i2c_get_status_fmtempty_def, i2c_get_status_hostidle_def, i2c_get_status_targetidle_def, i2c_get_status_rxempty_def, i2c_get_status_txfull_def, i2c_get_status_acqfull_def, i2c_get_status_txempty_def, i2c_get_status_acqempty_def, i2c_get_rdata_rdata_def, i2c_get_fifo_status_fmtlvl_def, i2c_get_fifo_status_txlvl_def, i2c_get_fifo_status_rxlvl_def, i2c_get_fifo_status_acqlvl_def, i2c_get_val_scl_rx_def, i2c_get_val_sda_rx_def, i2c_get_acqdata_abyte_def, i2c_get_acqdata_signal_def]
@@ -424,13 +422,12 @@ Proof
 QED
 
 Theorem i2c_write_fnums:
-  !st nb offset fnums wdata. i2c_write (st with fnums := fnums) nb offset wdata = i2c_write st nb offset wdata
+  i2c_write (st with fnums := fnums) nb offset wdata = i2c_write st nb offset wdata
 Proof
   asm_simp_tac std_ss [i2c_write_def, i2c_state_accfupds]
 QED
 
 Theorem i2c_cheshire_req_fnums:
-  !st valid write nb offset wdata fnums.
   cheshire_req i2c_read i2c_write (st with fnums := fnums) req =
   cheshire_req i2c_read i2c_write st req
 Proof
@@ -438,7 +435,7 @@ Proof
 QED
 
 Theorem OUTR_SUM_MAP:
-  !f g z. ISR z ==> OUTR (SUM_MAP f g z) = g (OUTR z)
+  ISR z ==> OUTR (SUM_MAP f g z) = g (OUTR z)
 Proof
   Cases_on `z` >> simp []
 QED
@@ -466,12 +463,12 @@ Proof
 QED
 
 Theorem cheshire_run_unused_fnums_2:
-  !reqs st.
   (!st req. MEM req reqs ==> ISR (cheshire_req i2c_read i2c_write st req)) ==>
   ?n st' rdatas. !fnums. (!i. i < n ==> fnums i = st.fnums i) ==>
   cheshire_run i2c_tick i2c_read i2c_write (st with fnums := fnums) reqs = INR (st' with fnums := (\i. fnums (i + n)), rdatas)
 Proof
-  Induct_on `reqs`
+  qid_spec_tac `st`
+  >> Induct_on `reqs`
   >- (rpt strip_tac
       >> qexistsl [`0`, `st`, `[]`]
       >> simp [cheshire_run_def, SF ETA_ss])
@@ -481,7 +478,7 @@ Proof
       >> PairCases_on `oracle_res`
       >> fs [i2c_cheshire_req_fnums]
 
-      >> qspecl_then [`oracle_res1`, `st`] strip_assume_tac i2c_tick_unused_fnums
+      >> strip_assume_tac $ Q.INST [`notif` |-> `oracle_res1`] i2c_tick_unused_fnums
       >> qrefine `n + m`
       >> simp []
       >> drule_then assume_tac i2c_st_upd_fnums_fupd
