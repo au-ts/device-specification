@@ -239,7 +239,7 @@ End
 Theorem {ip.name}_hwext_read_rel_fnums:
   {ip.name}_hwext_read_rel (st with fnums := fnums) = {ip.name}_hwext_read_rel st
 Proof
-  irule EQ_EXT >> simp [i2c_hwext_read_rel_def{"".join(f", {ip.name}_get_{name(reg)}_{name(field)}_def" for reg in regs for field in reg.fields if reg.hwext and field.swaccess.allows_read())}]
+  irule EQ_EXT >> simp [{ip.name}_hwext_read_rel_def{"".join(f", {ip.name}_get_{name(reg)}_{name(field)}_def" for reg in regs for field in reg.fields if reg.hwext and field.swaccess.allows_read())}]
 QED
 
 (* Whether the transition from `regs` -> `regs'` is in accordance with the
