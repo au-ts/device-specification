@@ -98,12 +98,12 @@ open {ip.name}CoreTheory {ip.name}RegsTheory;
 val _ = new_theory("{ip.name}Mappings");
 
 Definition {ip.name}_read_def:
-  {ip.name}_read (st: {ip.name}_state) (nb: num) (offset: num) = case offset of
+  {ip.name}_read (st: {ip.name}_state) (nb: num) (offset: num): ffi_outcome + {ip.name}_hwext_notif option # word32 = case offset of
     {"\n  | ".join(read_cases)}
 End
 
 Definition {ip.name}_write_def:
-  {ip.name}_write (st: {ip.name}_state) (nb: num) (offset: num) (wdata: word32) = case offset of
+  {ip.name}_write (st: {ip.name}_state) (nb: num) (offset: num) (wdata: word32): ffi_outcome + ({ip.name}_state -> {ip.name}_state) # {ip.name}_hwext_notif option = case offset of
     {"\n  | ".join(write_cases)}
 End
 
