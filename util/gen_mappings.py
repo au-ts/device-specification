@@ -5,7 +5,7 @@ from math import ceil
 from reggen.field import Field
 from reggen.register import Register
 
-from .common import block, ip, name, new_field_value, reg_value
+from .common import regs, ip, name, new_field_value, reg_value
 
 
 def oracle_field_value(reg: Register, field: Field):
@@ -66,8 +66,8 @@ def reg_write_case(reg: Register):
         if nb >= {width} then INR (st_upd, {write_notif}) else INL FFI_failed"""
 
 
-read_cases = [reg_read_case(reg) for reg in block.entries]
-write_cases = [reg_write_case(reg) for reg in block.entries]
+read_cases = [reg_read_case(reg) for reg in regs]
+write_cases = [reg_write_case(reg) for reg in regs]
 
 # It isn't strictly a failure if we read/write an invalid address, so it'd be
 # fine to loosen this to returning all 1s / doing nothing on read / write.
@@ -111,10 +111,10 @@ Theorem {ip.name}_write_st_upd_alt:
   {ip.name}_write st nb offset wdata = INR (st_upd, notif) ==>
   st_upd = \\st'. st' with <|
     regs := st'.regs with <|
-        {"\n      ".join(reg_st_upd_assn(reg) for reg in block.entries if not reg.hwext and any(field.swaccess.allows_write() for field in reg.fields))}
+        {"\n      ".join(reg_st_upd_assn(reg) for reg in regs if not reg.hwext and any(field.swaccess.allows_write() for field in reg.fields))}
     |>;
     buffered_notif := case offset of
-      {"\n    | ".join(f"{hex(reg.offset)} => SOME {name(reg)}_write" for reg in block.entries if not reg.hwext and any(field.hwqe for field in reg.fields))}
+      {"\n    | ".join(f"{hex(reg.offset)} => SOME {name(reg)}_write" for reg in regs if not reg.hwext and any(field.hwqe for field in reg.fields))}
     | _ => st'.buffered_notif;
   |>
 Proof
@@ -123,12 +123,12 @@ Proof
           >- (simp []
               >> strip_tac
               >> irule EQ_EXT
-              >> simp [{ip.name}_state_component_equality, {ip.name}_regs_component_equality, {", ".join(f"{ip.name}_{name(reg)}_component_equality" for reg in block.entries if not reg.hwext)}]))
+              >> simp [{ip.name}_state_component_equality, {ip.name}_regs_component_equality, {", ".join(f"{ip.name}_{name(reg)}_component_equality" for reg in regs if not reg.hwext)}]))
 QED
 
 Definition {ip.name}_addrs_def:
   (* TODO: I think sh_memaddrs is supposed to only contain word-aligned addresses (which is, rather counterintuitively, what byte_align does), but we should double-check. *)
-  {ip.name}_addrs = {{{"; ".join(f"byte_align {hex(reg.offset)}w" for reg in block.entries)}}}
+  {ip.name}_addrs = {{{"; ".join(f"byte_align {hex(reg.offset)}w" for reg in regs)}}}
 End
 
 val _ = export_theory();

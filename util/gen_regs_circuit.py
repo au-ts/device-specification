@@ -5,7 +5,7 @@ from math import ceil
 from reggen.field import Field
 from reggen.register import Register
 
-from .common import block, ip, name, new_field_value, reg_value
+from .common import regs, ip, name, new_field_value, reg_value
 
 
 def hw_field_value(reg: Register, field: Field):
@@ -135,12 +135,12 @@ def reg2hw_reg_init(reg: Register):
 
 comms = [
     f'"regs_{name(reg)}_{name(field)}"'
-    for reg in block.entries
+    for reg in regs
     for field in reg.fields
     if not reg.hwext
 ] + [
     f'"reg2hw_{name(reg)}_{name(field)}_qe"'
-    for reg in block.entries
+    for reg in regs
     for field in reg.fields
     if field.hwqe and not reg.hwext
 ]
@@ -164,15 +164,15 @@ val {ip.name}_reg_top_comb_1_tm = ``
     s' = s' with valid := (reg_req_decode fext.reg_req_i: 7 reg_req).valid;
 
     s' = case s'.addr of
-      {"\n    | ".join(reg_top_error_case(reg) for reg in block.entries)}
+      {"\n    | ".join(reg_top_error_case(reg) for reg in regs)}
     | _ => s' with reg_rsp_o := (1 :+ s'.valid) s'.reg_rsp_o;
     s' = s' with reg_rsp_o := (0 :+ T) s'.reg_rsp_o;
 
-    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_q_assns(reg) if not reg.hwext and reg.hwaccess.allows_read())}
+    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in regs for assn in reg_top_reg_q_assns(reg) if not reg.hwext and reg.hwaccess.allows_read())}
 
-    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_hwext_q_assns(reg) if reg.hwext and reg.hwaccess.allows_read())}
+    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in regs for assn in reg_top_reg_hwext_q_assns(reg) if reg.hwext and reg.hwaccess.allows_read())}
 
-    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_hwext_qe_re_assns(reg) if reg.hwext and (reg.hwqe or reg.hwre))}
+    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in regs for assn in reg_top_reg_hwext_qe_re_assns(reg) if reg.hwext and (reg.hwqe or reg.hwre))}
   in
     s'
 ``
@@ -184,28 +184,28 @@ val {ip.name}_reg_top_comb_2_tm = ``
      * that would make sharing code with the HOL version more annoying.
      *
      * Alternatively, using @@ would be a lot less ugly than this. *)
-    {"\n  | ".join(f"{hex(reg.offset)}w => s' with reg_rsp_o := bit_field_insert 33 2 ({reg_value(reg, hw_field_value)}: word32) s'.reg_rsp_o" for reg in block.entries)}
+    {"\n  | ".join(f"{hex(reg.offset)}w => s' with reg_rsp_o := bit_field_insert 33 2 ({reg_value(reg, hw_field_value)}: word32) s'.reg_rsp_o" for reg in regs)}
   | _ => s' with reg_rsp_o := bit_field_insert 33 2 (0xffffffffw: word32) s'.reg_rsp_o
 ``
 
 val {ip.name}_reg_top_ff_tm = ``
   let
-    {"\n    ".join(reg_top_field_assn(reg, field) for reg in block.entries for field in reg.fields if not reg.hwext and (field.swaccess.allows_write() or field.hwaccess.allows_write()))}
+    {"\n    ".join(reg_top_field_assn(reg, field) for reg in regs for field in reg.fields if not reg.hwext and (field.swaccess.allows_write() or field.hwaccess.allows_write()))}
 
-    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_qe_assns(reg) if not reg.hwext and reg.hwqe)}
+    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in regs for assn in reg_top_reg_qe_assns(reg) if not reg.hwext and reg.hwqe)}
   in
     s'
 ``
 
 val {ip.name}_regs_init_tm = ``
   (<|
-    {"\n    ".join(f"{name(reg)} := {reg_init(reg)};" for reg in block.entries if not reg.hwext)}
+    {"\n    ".join(f"{name(reg)} := {reg_init(reg)};" for reg in regs if not reg.hwext)}
   |>): i2c_regs
 ``;
 
 val {ip.name}_reg2hw_init_tm = ``
   (<|
-    {"\n    ".join(f"{name(reg)} := {reg2hw_reg_init(reg)};" for reg in block.entries if not reg.hwext and reg.hwqe)}
+    {"\n    ".join(f"{name(reg)} := {reg2hw_reg_init(reg)};" for reg in regs if not reg.hwext and reg.hwqe)}
   |>): i2c_reg2hw
 ``;
 

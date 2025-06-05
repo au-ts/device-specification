@@ -2,7 +2,7 @@ import sys
 
 from reggen.register import Register
 
-from .common import block, ip, name
+from .common import regs, ip, name
 
 
 def reg_record(reg: Register):
@@ -32,7 +32,7 @@ def regs_record():
     return f"""\
 Datatype:
   {ip.name}_regs = <|
-    {"\n    ".join(f"{name(reg)}: {ip.name}_{name(reg)};" for reg in block.entries if not reg.hwext)}
+    {"\n    ".join(f"{name(reg)}: {ip.name}_{name(reg)};" for reg in regs if not reg.hwext)}
   |>
 End"""
 
@@ -59,22 +59,22 @@ open wordsTheory;
 val _ = new_theory("{ip.name}Regs");
 
 (* The fields of all the registers which need to be stored. *)
-{"\n\n".join(reg_record(reg) for reg in block.entries if not reg.hwext)}
+{"\n\n".join(reg_record(reg) for reg in regs if not reg.hwext)}
 
 {regs_record()}
 
 (* The fields of each register which can be updated on a write. *)
-{"\n\n".join(reg_update_record(reg) for reg in block.entries if any(field.swaccess.allows_write() for field in reg.fields))}
+{"\n\n".join(reg_update_record(reg) for reg in regs if any(field.swaccess.allows_write() for field in reg.fields))}
 
 (* Functions which decode all of a register's writable fields from a write request. *)
-{"\n\n".join(reg_decode_write(reg) for reg in block.entries if any(field.swaccess.allows_write() for field in reg.fields))}
+{"\n\n".join(reg_decode_write(reg) for reg in regs if any(field.swaccess.allows_write() for field in reg.fields))}
 
 Datatype:
-  {ip.name}_hwext_read_notif = {" | ".join(f"{(name(reg))}_read" for reg in block.entries if any(field.hwre for field in reg.fields))}
+  {ip.name}_hwext_read_notif = {" | ".join(f"{(name(reg))}_read" for reg in regs if any(field.hwre for field in reg.fields))}
 End
 
 Datatype:
-  {ip.name}_hwext_write_notif = {" | ".join(f"{(name(reg))}_write {ip.name}_{name(reg)}_update" for reg in block.entries if any(field.hwqe for field in reg.fields) and reg.hwext)}
+  {ip.name}_hwext_write_notif = {" | ".join(f"{(name(reg))}_write {ip.name}_{name(reg)}_update" for reg in regs if any(field.hwqe for field in reg.fields) and reg.hwext)}
 End
 
 Datatype:
@@ -82,7 +82,7 @@ Datatype:
 End
 
 Datatype:
-  {ip.name}_notif = {" | ".join(f"{name(reg)}_write" for reg in block.entries if any(field.hwqe for field in reg.fields) and not reg.hwext)}
+  {ip.name}_notif = {" | ".join(f"{name(reg)}_write" for reg in regs if any(field.hwqe for field in reg.fields) and not reg.hwext)}
 End
 
 val _ = export_theory();

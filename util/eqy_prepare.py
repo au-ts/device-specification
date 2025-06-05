@@ -6,18 +6,18 @@
 import re
 import sys
 
-from .common import block, ip, name
+from .common import regs, ip, name
 
 with open(sys.argv[2]) as f:
     input = f.read()
 
-reg_re = "|".join(name(reg) for reg in block.entries if len(reg.fields) > 1)
-field_re = "|".join(name(field) for reg in block.entries for field in reg.fields)
+reg_re = "|".join(name(reg) for reg in regs if len(reg.fields) > 1)
+field_re = "|".join(name(field) for reg in regs for field in reg.fields)
 input = re.sub(
     rf"(reg2hw|hw2reg)_({reg_re})_({field_re})_(d|de|q|qe|re)", r"\1.\2.\3.\4", input
 )
 
-flat_reg_re = "|".join(name(reg) for reg in block.entries if len(reg.fields) <= 1)
+flat_reg_re = "|".join(name(reg) for reg in regs if len(reg.fields) <= 1)
 input = re.sub(
     rf"(reg2hw|hw2reg)_({flat_reg_re})_({field_re})_(d|de|q|qe|re)", r"\1.\2.\4", input
 )

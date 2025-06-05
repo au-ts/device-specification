@@ -5,6 +5,7 @@ from typing import Callable
 from reggen.field import Field
 from reggen.ip_block import IpBlock
 from reggen.register import Register
+from reggen.multi_register import MultiRegister
 
 ip = IpBlock.from_path(sys.argv[1], [])
 # Currently we assume that registers are always 32-bit, so that we can store the
@@ -13,6 +14,12 @@ assert ip.regwidth == 32
 
 # Assume there's only 1 block for now.
 (block,) = ip.reg_blocks.values()
+regs = []
+for entry in block.entries:
+    if isinstance(entry, Register):
+        regs.append(entry)
+    elif isinstance(entry, MultiRegister):
+        regs.extend(entry.regs)
 
 # TODO: use bool for single-bit registers instead of word1
 
