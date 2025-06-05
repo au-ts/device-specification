@@ -146,7 +146,7 @@ def reg_hwext_notif_rels(reg: Register):
 
 def notif_rel_exp():
     if any(field.hwqe and not reg.hwext for reg in regs for field in reg.fields):
-        " /\\\n  ".join(
+        return " /\\\n  ".join(
             field_notif_rel(reg, field)
             for reg in regs
             for field in reg.fields
@@ -158,7 +158,7 @@ def notif_rel_exp():
 
 def hwext_notif_rel_exp():
     if any(reg.hwext for reg in regs):
-        " /\\\n    ".join(
+        return " /\\\n    ".join(
             term for reg in regs for term in reg_hwext_notif_rels(reg) if reg.hwext
         )
     else:
@@ -191,6 +191,7 @@ def hwext_read_rel_exp():
             f"hw2reg.{name(reg)}.{name(field)}_d = {ip.name}_get_{name(reg)}_{name(field)} st"
             for reg in regs
             for field in reg.fields
+            # TODO: why is this an `any`? shouldn't it just be field.swaccess.allows_read?
             if reg.hwext and any(field.swaccess.allows_read() for field in reg.fields)
         )
     else:
