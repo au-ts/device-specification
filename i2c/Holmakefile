@@ -9,36 +9,35 @@ OPENTITAN_PERIPHERALS = $(shell bender -d $(CHESHIREDIR) path opentitan_peripher
 CHESHIRE_INCDIRS = $(shell bender -d $(CHESHIREDIR) script template_json | jq -r .all_incdirs.[])
 CHESHIRE_INC = $(patsubst %, -I%, $(CHESHIRE_INCDIRS))
 
-# TODO: stop using shell redirection so that the *.sml files don't need to be manually deleted if the python scripts fail.
 i2cRegsScript.sml: ../util/gen_regs.py ../util/common.py
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_regs \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
-		> i2cRegsScript.sml
+		i2cRegsScript.sml
 
 i2cMappingsScript.sml: ../util/gen_mappings.py ../util/common.py i2cCoreTheory.uo
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_mappings \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
-		> i2cMappingsScript.sml
+		i2cMappingsScript.sml
 
 i2cRegsCommScript.sml: ../util/gen_regs_comm.py ../util/common.py i2cRegsTheory.uo i2cCoreTheory.uo
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_regs_comm \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
-		> i2cRegsCommScript.sml
+		i2cRegsCommScript.sml
 
 i2cRegsCircuitLib.sml: ../util/gen_regs_circuit.py ../util/common.py
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_regs_circuit \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
-		> i2cRegsCircuitLib.sml
+		i2cRegsCircuitLib.sml
 
 i2c_circuit_eqy.sv: i2cCircuitCompileTheory.uo ../util/eqy_prepare.py
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.eqy_prepare \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
-		< i2c_circuit.sv > i2c_circuit_eqy.sv
+		i2c_circuit.sv i2c_circuit_eqy.sv
 
 i2c_circuit_eqy.v: i2c_circuit_eqy.sv
 	sv2v i2c_circuit_eqy.sv $(OPENTITAN_PERIPHERALS)/src/i2c/rtl/i2c_reg_pkg.sv --write=i2c_circuit_eqy.v

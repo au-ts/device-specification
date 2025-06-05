@@ -1,3 +1,4 @@
+import sys
 from math import ceil
 
 # Set PYTHONPATH=${register_interface}/vendor/lowrisc_opentitan/util for these imports to work.
@@ -213,4 +214,5 @@ val {ip.name}_reg_comms = [{", ".join(comms)}];
 end
 """
 
-print(regs_circuit_lib, end="")
+with open(sys.argv[2], "w") as f:
+    f.write(regs_circuit_lib)

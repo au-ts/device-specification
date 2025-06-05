@@ -1,3 +1,4 @@
+import sys
 from math import ceil
 
 # Set PYTHONPATH=${register_interface}/vendor/lowrisc_opentitan/util for these imports to work.
@@ -133,4 +134,5 @@ End
 val _ = export_theory();
 """
 
-print(mappings, end="")
+with open(sys.argv[2], "w") as f:
+    f.write(mappings)

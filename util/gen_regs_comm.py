@@ -1,9 +1,10 @@
 import itertools
+import sys
+from math import ceil
 
 # Set PYTHONPATH=${register_interface}/vendor/lowrisc_opentitan/util for these imports to work.
 from reggen.field import Field
 from reggen.register import Register
-from math import ceil
 
 from .common import block, ip, name
 
@@ -203,5 +204,5 @@ QED
 val _ = export_theory ();
 """
 
-
-print(regs_comm, end="")
+with open(sys.argv[2], "w") as f:
+    f.write(regs_comm)

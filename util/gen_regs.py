@@ -1,3 +1,5 @@
+import sys
+
 from reggen.register import Register
 
 from .common import block, ip, name
@@ -86,4 +88,5 @@ End
 val _ = export_theory();
 """
 
-print(regs, end="")
+with open(sys.argv[2], "w") as f:
+    f.write(regs)

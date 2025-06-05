@@ -8,7 +8,8 @@ import sys
 
 from .common import block, ip, name
 
-input = sys.stdin.read()
+with open(sys.argv[2]) as f:
+    input = f.read()
 
 reg_re = "|".join(name(reg) for reg in block.entries if len(reg.fields) > 1)
 field_re = "|".join(name(field) for reg in block.entries for field in reg.fields)
@@ -36,4 +37,5 @@ input = re.sub(
     input,
 )
 
-print(input, end="")
+with open(sys.argv[3], "w") as f:
+    f.write(input)
