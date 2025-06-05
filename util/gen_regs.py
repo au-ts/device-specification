@@ -52,6 +52,50 @@ Definition {ip.name}_{name(reg)}_decode_write_def:
 End"""
 
 
+if any(
+    reg.hwext and (field.hwqe or field.hwre) for reg in regs for field in reg.fields
+):
+    cases = []
+    if any(reg.hwext and field.hwre for reg in regs for field in reg.fields):
+        hwext_read_notif_decl = f"""\
+Datatype:
+  {ip.name}_hwext_read_notif = {" | ".join(f"{(name(reg))}_read" for reg in regs if any(field.hwre for field in reg.fields))}
+End
+
+"""
+        cases.append(f"Read {ip.name}_hwext_read_notif")
+    else:
+        hwext_read_notif_decl = ""
+
+    if any(reg.hwext and field.hwqe for reg in regs for field in reg.fields):
+        hwext_write_notif_decl = f"""\
+Datatype:
+  {ip.name}_hwext_write_notif = {" | ".join(f"{(name(reg))}_write {ip.name}_{name(reg)}_update" for reg in regs if any(field.hwqe for field in reg.fields) and reg.hwext)}
+End
+
+"""
+        cases.append(f"Write {ip.name}_hwext_write_notif")
+    else:
+        hwext_write_notif_decl = ""
+
+    hwext_notif_decl = f"""\
+Datatype:
+  {ip.name}_hwext_notif = {" | ".join(cases)}
+End"""
+else:
+    hwext_read_notif_decl = ""
+    hwext_write_notif_decl = ""
+    hwext_notif_decl = "Type {ip.name}_hwext_notif = ``:unit``"
+
+
+if any(field.hwqe and not reg.hwext for reg in regs for field in reg.fields):
+    notif_decl = f"""\
+Datatype:
+  {ip.name}_notif = {" | ".join(f"{name(reg)}_write" for reg in regs if any(field.hwqe for field in reg.fields) and not reg.hwext)}
+End"""
+else:
+    notif_decl = f"Type {ip.name}_notif = ``:unit``"
+
 regs = f"""\
 open HolKernel Parse boolLib bossLib;
 open wordsTheory;
@@ -69,21 +113,9 @@ val _ = new_theory("{ip.name}Regs");
 (* Functions which decode all of a register's writable fields from a write request. *)
 {"\n\n".join(reg_decode_write(reg) for reg in regs if any(field.swaccess.allows_write() for field in reg.fields))}
 
-Datatype:
-  {ip.name}_hwext_read_notif = {" | ".join(f"{(name(reg))}_read" for reg in regs if any(field.hwre for field in reg.fields))}
-End
+{hwext_read_notif_decl}{hwext_write_notif_decl}{hwext_notif_decl}
 
-Datatype:
-  {ip.name}_hwext_write_notif = {" | ".join(f"{(name(reg))}_write {ip.name}_{name(reg)}_update" for reg in regs if any(field.hwqe for field in reg.fields) and reg.hwext)}
-End
-
-Datatype:
-  {ip.name}_hwext_notif = Read {ip.name}_hwext_read_notif | Write {ip.name}_hwext_write_notif
-End
-
-Datatype:
-  {ip.name}_notif = {" | ".join(f"{name(reg)}_write" for reg in regs if any(field.hwqe for field in reg.fields) and not reg.hwext)}
-End
+{notif_decl}
 
 val _ = export_theory();
 """

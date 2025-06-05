@@ -121,7 +121,7 @@ Theorem {ip.name}_req_error_alt:
     {"\n  | ".join(req_error_case(reg, True) for reg in regs)}
   | _ => req.valid
 Proof
-  simp [i2c_req_error_def]
+  simp [{ip.name}_req_error_def]
   >> rpt (IF_CASES_TAC >- simp [])
   >> simp []
 QED"""
@@ -144,11 +144,64 @@ def reg_hwext_notif_rels(reg: Register):
     return result
 
 
+def notif_rel_exp():
+    if any(field.hwqe and not reg.hwext for reg in regs for field in reg.fields):
+        " /\\\n  ".join(
+            field_notif_rel(reg, field)
+            for reg in regs
+            for field in reg.fields
+            if field.hwqe and not reg.hwext
+        )
+    else:
+        return "T"
+
+
+def hwext_notif_rel_exp():
+    if any(reg.hwext for reg in regs):
+        " /\\\n    ".join(
+            term for reg in regs for term in reg_hwext_notif_rels(reg) if reg.hwext
+        )
+    else:
+        return "T"
+
+
+def hw_write_rel_exp():
+    if any(
+        not reg.hwext and field.hwaccess.allows_write()
+        for reg in regs
+        for field in reg.fields
+    ):
+        return " /\\\n  ".join(
+            rf"regs'.{name(reg)}.{name(field)} = (if hw2reg.{name(reg)}.{name(field)}_de then hw2reg.{name(reg)}.{name(field)}_d else regs.{name(reg)}.{name(field)})"
+            for reg in regs
+            for field in reg.fields
+            if not reg.hwext and field.hwaccess.allows_write()
+        )
+    else:
+        return "T"
+
+
+def hwext_read_rel_exp():
+    if any(
+        reg.hwext and field.swaccess.allows_read()
+        for reg in regs
+        for field in reg.fields
+    ):
+        return " /\\\n  ".join(
+            f"hw2reg.{name(reg)}.{name(field)}_d = {ip.name}_get_{name(reg)}_{name(field)} st"
+            for reg in regs
+            for field in reg.fields
+            if reg.hwext and any(field.swaccess.allows_read() for field in reg.fields)
+        )
+    else:
+        return "T"
+
+
 regs_comm = f"""\
 open HolKernel Parse boolLib bossLib;
 open wordsTheory;
 open wordsLib;
-open cheshireCircuitTheory i2cCoreTheory i2cRegsTheory;
+open cheshireCircuitTheory {ip.name}CoreTheory {ip.name}RegsTheory;
 
 val _ = new_theory "{ip.name}RegsComm";
 
@@ -162,7 +215,7 @@ val _ = new_theory "{ip.name}RegsComm";
 
 Definition {ip.name}_notif_rel_def:
   {ip.name}_notif_rel (notif: {ip.name}_notif option) (reg2hw: {ip.name}_reg2hw) <=>
-  {" /\\\n  ".join(field_notif_rel(reg, field) for reg in regs for field in reg.fields if field.hwqe and not reg.hwext)}
+  {notif_rel_exp()}
 End
 
 {req_error()}
@@ -179,7 +232,7 @@ Definition {ip.name}_hwext_read_rel_def:
   {ip.name}_hwext_read_rel (st: {ip.name}_state) (hw2reg: {ip.name}_hw2reg) <=>
   (* TODO: we probably shouldn't be including write-only fields in a hwext struct
    * which happens to have other readable fields here? *)
-  {" /\\\n  ".join(f"hw2reg.{name(reg)}.{name(field)}_d = {ip.name}_get_{name(reg)}_{name(field)} st" for reg in regs for field in reg.fields if reg.hwext and any(field.swaccess.allows_read() for field in reg.fields))}
+  {hwext_read_rel_exp()}
 End
 
 (* Whether the transition from `regs` -> `regs'` is in accordance with the
@@ -187,7 +240,7 @@ End
 Definition {ip.name}_hw_write_rel_def:
   (* hw2reg is from the same clock cycle as `regs`, not `regs'`. *)
   {ip.name}_hw_write_rel (regs: {ip.name}_regs) (regs': {ip.name}_regs) (hw2reg: {ip.name}_hw2reg) <=>
-  {" /\\\n  ".join(rf"regs'.{name(reg)}.{name(field)} = (if hw2reg.{name(reg)}.{name(field)}_de then hw2reg.{name(reg)}.{name(field)}_d else regs.{name(reg)}.{name(field)})" for reg in regs for field in reg.fields if not reg.hwext and field.hwaccess.allows_write())}
+  {hw_write_rel_exp()}
 End
 
 (* This probably shouldn't go here but I don't want to create a whole new file

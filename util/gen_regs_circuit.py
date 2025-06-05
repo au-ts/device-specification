@@ -127,10 +127,35 @@ def reg_init(reg: Register):
     |>"""
 
 
+def regs_init():
+    if any(not reg.hwext for reg in regs):
+        return f"""\
+val {ip.name}_regs_init_tm = ``
+  (<|
+    {"\n    ".join(f"{name(reg)} := {reg_init(reg)};" for reg in regs if not reg.hwext)}
+  |>): {ip.name}_regs
+``;"""
+    else:
+        return f"val {ip.name}_regs_init_tm = ``ARB: {ip.name}_regs``;"
+
+
 def reg2hw_reg_init(reg: Register):
     return f"""<|
       {"\n      ".join(f"{name(field)}_qe := F;" for field in reg.fields if field.hwqe)}
     |>"""
+
+
+def reg2hw_init():
+    if any(not reg.hwext and reg.hwqe for reg in regs):
+        return f"""\
+val {ip.name}_reg2hw_init_tm = ``
+  (<|
+    {"\n    ".join(f"{name(reg)} := {reg2hw_reg_init(reg)};" for reg in regs if not reg.hwext and reg.hwqe)}
+  |>): {ip.name}_reg2hw
+``;
+"""
+    else:
+        return f"val {ip.name}_reg2hw_init_tm = ``ARB: {ip.name}_reg2hw``;"
 
 
 comms = [
@@ -197,17 +222,9 @@ val {ip.name}_reg_top_ff_tm = ``
     s'
 ``
 
-val {ip.name}_regs_init_tm = ``
-  (<|
-    {"\n    ".join(f"{name(reg)} := {reg_init(reg)};" for reg in regs if not reg.hwext)}
-  |>): i2c_regs
-``;
+{regs_init()}
 
-val {ip.name}_reg2hw_init_tm = ``
-  (<|
-    {"\n    ".join(f"{name(reg)} := {reg2hw_reg_init(reg)};" for reg in regs if not reg.hwext and reg.hwqe)}
-  |>): i2c_reg2hw
-``;
+{reg2hw_init()}
 
 val {ip.name}_reg_comms = [{", ".join(comms)}];
 
