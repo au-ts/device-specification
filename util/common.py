@@ -14,6 +14,7 @@ assert ip.regwidth == 32
 
 # Assume there's only 1 block for now.
 (block,) = ip.reg_blocks.values()
+addr_width = block.get_addr_width()
 regs = []
 for entry in block.entries:
     if isinstance(entry, Register):

@@ -5,7 +5,7 @@ from math import ceil
 from reggen.field import Field
 from reggen.register import Register
 
-from .common import regs, ip, name, new_field_value, reg_value
+from .common import addr_width, ip, name, new_field_value, reg_value, regs
 
 
 def hw_field_value(reg: Register, field: Field):
@@ -182,11 +182,11 @@ open {ip.name}CircuitStateTheory {ip.name}RegsTheory {ip.name}RegsCommTheory;
  * let `i2cCircuitTheory` make the actual definitions. *)
 val {ip.name}_reg_top_comb_1_tm = ``
   let
-    s' = s' with addr := (reg_req_decode fext.reg_req_i: 7 reg_req).addr;
-    s' = s' with write := (reg_req_decode fext.reg_req_i: 7 reg_req).write;
-    s' = s' with wdata := (reg_req_decode fext.reg_req_i: 7 reg_req).wdata;
-    s' = s' with wstrb := (reg_req_decode fext.reg_req_i: 7 reg_req).wstrb;
-    s' = s' with valid := (reg_req_decode fext.reg_req_i: 7 reg_req).valid;
+    s' = s' with addr := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).addr;
+    s' = s' with write := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).write;
+    s' = s' with wdata := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).wdata;
+    s' = s' with wstrb := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).wstrb;
+    s' = s' with valid := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).valid;
 
     s' = case s'.addr of
       {"\n    | ".join(reg_top_error_case(reg) for reg in regs)}

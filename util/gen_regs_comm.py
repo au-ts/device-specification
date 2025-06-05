@@ -6,7 +6,7 @@ from math import ceil
 from reggen.field import Field
 from reggen.register import Register
 
-from .common import regs, ip, name
+from .common import addr_width, ip, name, regs
 
 
 def field_reg2hw_fields(field: Field):
@@ -106,7 +106,7 @@ def req_error_case(reg: Register, alt: bool):
 def req_error():
     return f"""\
 Definition {ip.name}_req_error_def:
-  {ip.name}_req_error (req: 7 reg_req) <=>
+  {ip.name}_req_error (req: {addr_width} reg_req) <=>
   req.valid /\\ case req.addr of
     {"\n  | ".join(req_error_case(reg, False) for reg in regs)}
   | _ => T
@@ -116,7 +116,7 @@ End"""
 def req_error_alt():
     return f"""\
 Theorem {ip.name}_req_error_alt:
-  {ip.name}_req_error (req: 7 reg_req) <=>
+  {ip.name}_req_error (req: {addr_width} reg_req) <=>
   case req.addr of
     {"\n  | ".join(req_error_case(reg, True) for reg in regs)}
   | _ => req.valid
@@ -224,7 +224,7 @@ End
 {req_error_alt()}
 
 Definition {ip.name}_hwext_notif_rel_def:
-  {ip.name}_hwext_notif_rel (notif: {ip.name}_hwext_notif option) (req: 7 reg_req) <=>
+  {ip.name}_hwext_notif_rel (notif: {ip.name}_hwext_notif option) (req: {addr_width} reg_req) <=>
     ~{ip.name}_req_error req /\\
     {" /\\\n    ".join(term for reg in regs for term in reg_hwext_notif_rels(reg) if reg.hwext)}
 End
@@ -235,6 +235,12 @@ Definition {ip.name}_hwext_read_rel_def:
    * which happens to have other readable fields here? *)
   {hwext_read_rel_exp()}
 End
+
+Theorem {ip.name}_hwext_read_rel_fnums:
+  {ip.name}_hwext_read_rel (st with fnums := fnums) = {ip.name}_hwext_read_rel st
+Proof
+  irule EQ_EXT >> simp [i2c_hwext_read_rel_def, {", ".join(f"{ip.name}_get_{name(reg)}_{name(field)}_def" for reg in regs for field in reg.fields if reg.hwext and field.swaccess.allows_read())}]
+QED
 
 (* Whether the transition from `regs` -> `regs'` is in accordance with the
  * instructions in `hw2reg`. *)

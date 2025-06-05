@@ -2,7 +2,7 @@ import sys
 
 from reggen.register import Register
 
-from .common import regs, ip, name
+from .common import ip, name, regs
 
 
 def reg_record(reg: Register):

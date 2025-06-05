@@ -5,7 +5,7 @@ from math import ceil
 from reggen.field import Field
 from reggen.register import Register
 
-from .common import regs, ip, name, new_field_value, reg_value
+from .common import ip, name, new_field_value, reg_value, regs
 
 
 def oracle_field_value(reg: Register, field: Field):

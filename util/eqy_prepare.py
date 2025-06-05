@@ -6,7 +6,7 @@
 import re
 import sys
 
-from .common import regs, ip, name
+from .common import ip, name, regs
 
 with open(sys.argv[2]) as f:
     input = f.read()
