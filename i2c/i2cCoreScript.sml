@@ -321,7 +321,8 @@ Definition i2c_tick_def:
 
                    | Receiving
                      ReadHoldBit       => if st.counter > 1w then Receiving ReadHoldBit
-                                          else Receiving HostClockLowAck
+                                          else if st.bit_index = 0w then Receiving HostClockLowAck
+                                          else Receiving ReadClockLow
 
                    | Receiving
                      HostClockLowAck   => if st.counter > 1w then Receiving HostClockLowAck
@@ -388,6 +389,7 @@ Definition i2c_tick_def:
                                           else PopFmtFifo
 
                    | PopFmtFifo        => if st.regs.ctrl.enablehost = 0w then Stopping ClockStop
+                                          (* TODO: check if this is supposed to be ‘LENGTH st.fmt_fifo = 1’ *)
                                           else if NULL st.fmt_fifo then Idle
                                           else Active;
       read_byte_clr' = ( st.fsm_state = Receiving ReadHoldBit ∧ st.counter = 1w ∧ st.bit_index = 0w );
@@ -418,11 +420,9 @@ Definition i2c_tick_def:
               then st.regs with <| intr_state := (st.regs.intr_state with <| cmd_complete := 1w |>) |>
               else st.regs;
 
-
       pend_restart' = if st.pend_restart ∧ st.regs.ctrl.enablehost = 0w ∨ log_start then F
                       else if req_restart then T
                       else st.pend_restart;
-
 
       trans_started' = if st.trans_started ∧ st.regs.ctrl.enablehost = 0w ∨ log_stop then F
                        else if log_start then T
