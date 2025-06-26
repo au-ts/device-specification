@@ -1,0 +1,10 @@
+spi_hostRegsScript.sml
+spi_hostMappingsScript.sml
+spi_hostRegsCommScript.sml
+spi_hostRegsCircuitLib.sml
+
+spi_host_circuit.sv
+spi_host_circuit_eqy.sv
+spi_host_circuit_eqy.v
+spi_host_reg_top.v
+spi_host_reg_top

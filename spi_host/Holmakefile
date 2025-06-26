@@ -1,0 +1,56 @@
+INCLUDES = ../common $(CAKEMLDIR)/semantics/ffi $(HARDWAREDIR)/verilog $(HARDWAREDIR)/translator
+
+all: $(DEFAULT_TARGETS)
+.PHONY: all
+
+REGISTER_INTERFACE = $(shell bender -d $(CHESHIREDIR) path register_interface)
+OPENTITAN_PERIPHERALS = $(shell bender -d $(CHESHIREDIR) path opentitan_peripherals)
+
+CHESHIRE_INCDIRS = $(shell bender -d $(CHESHIREDIR) script template_json | jq -r .all_incdirs.[])
+CHESHIRE_INC = $(patsubst %, -I%, $(CHESHIRE_INCDIRS))
+
+spi_hostRegsScript.sml: ../util/gen_regs.py ../util/common.py
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
+		python3 -m util.gen_regs \
+		"$(OPENTITAN_PERIPHERALS)/src/spi_host/data/spi_host.hjson" \
+		spi_hostRegsScript.sml
+
+spi_hostMappingsScript.sml: ../util/gen_mappings.py ../util/common.py spi_hostCoreTheory.uo
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
+		python3 -m util.gen_mappings \
+		"$(OPENTITAN_PERIPHERALS)/src/spi_host/data/spi_host.hjson" \
+		spi_hostMappingsScript.sml
+
+spi_hostRegsCommScript.sml: ../util/gen_regs_comm.py ../util/common.py spi_hostRegsTheory.uo spi_hostCoreTheory.uo
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
+		python3 -m util.gen_regs_comm \
+		"$(OPENTITAN_PERIPHERALS)/src/spi_host/data/spi_host.hjson" \
+		spi_hostRegsCommScript.sml
+
+spi_hostRegsCircuitLib.sml: ../util/gen_regs_circuit.py ../util/common.py
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
+		python3 -m util.gen_regs_circuit \
+		"$(OPENTITAN_PERIPHERALS)/src/spi_host/data/spi_host.hjson" \
+		spi_hostRegsCircuitLib.sml
+
+spi_host_circuit_eqy.sv: spi_hostCircuitCompileTheory.uo ../util/eqy_prepare.py
+	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
+		python3 -m util.eqy_prepare \
+		"$(OPENTITAN_PERIPHERALS)/src/spi_host/data/spi_host.hjson" \
+		spi_host_circuit.sv spi_host_circuit_eqy.sv
+
+spi_host_circuit_eqy.v: spi_host_circuit_eqy.sv
+	sv2v spi_host_circuit_eqy.sv $(OPENTITAN_PERIPHERALS)/src/spi_host/rtl/spi_host_reg_pkg.sv --write=spi_host_circuit_eqy.v
+
+spi_host_reg_top.v: spi_host_reg_top_wrapper.sv
+	sv2v \
+	    $(CHESHIRE_INC) \
+		$(OPENTITAN_PERIPHERALS)/src/spi_host/rtl/spi_host_reg_*.sv \
+		$(REGISTER_INTERFACE)/{src/reg_intf.sv,vendor/lowrisc_opentitan/src/*.sv} \
+		spi_host_reg_top_wrapper.sv \
+		--write=spi_host_reg_top.v --top=spi_host_reg_top_wrapper
+
+.PHONY: eqy
+eqy: spi_host_circuit_eqy.v spi_host_reg_top.v
+	rm -rf spi_host_reg_top
+	eqy spi_host_reg_top.eqy
