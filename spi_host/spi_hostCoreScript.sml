@@ -100,6 +100,9 @@ Datatype:
      I guess so a host can communicate with devices that support varied SPI standards *)
     start_bit: 3 word; (* 7 *)
     shift_size: 3 word; (* 1 *)
+
+    (* SR state *)
+    rx_buf_valid: bool;
   |>
 End
 
@@ -110,9 +113,9 @@ End
 
 Datatype:
   delay = <|
-    csnlead   : 4 word ;
-    csntrail  : 4 word ;
-    csnidle   : 4 word ;
+    csnlead   : 4 word;
+    csntrail  : 4 word;
+    csnidle   : 4 word;
   |>
 End
 
@@ -183,8 +186,8 @@ Definition spi_host_tick_def:
       (* fnums 0 used for command_valid_i *)
       command_valid_i : 1 word = n2w $ fnums 0;
 
-      sw_rst_i: bool = F; (*TODO*)
-      fsm_en: bool = T;
+      sw_rst_i: bool = word_bit 0 (n2w $ fnums 1); (*TODO*)
+      fsm_en: bool = word_bit 0 (n2w $ fnums 2);
       
       command_i: command;
       (* fnums 1 used for command_i *)
@@ -242,9 +245,15 @@ Definition spi_host_tick_def:
       csid' = if st.new_command then command_i.csid else st.csid_q;
       csid_q' = if st.new_command ∧ (st.stall = F) then st.csid else st.csid_q;
 
+      (*Core in *)
+      tx_valid_i: bool = word_bit 0 (n2w $ fnums 3);
+      tx_data_i: word 32 = n2w $ fnums 5;
+      tx_be_i: word 4 = n2w $ fnums 6;
+      rx_ready_i: bool = word_bit 0 (new $ fnums 7);
 
-      sr_wr_ready_i: bool = T; (* TODO *)
-      sr_rd_ready_i: bool = T; (* TODO *)
+      (*FSM in *)
+      sr_wr_ready_i: bool = tx_valid_sr; (*Goes throught shift register but just assigning wires *)
+      sr_rd_ready_i: bool = word_bit 0 (n2w $ fnums 4);
       
 
       cmd_wr_en' = if st.new_command then command_i.segment.cmd_wr_en else st.cmd_wr_en; (* always_comb *)
@@ -258,6 +267,100 @@ Definition spi_host_tick_def:
       stall': bool = (tx_stall_o ∨ rx_stall_o);
 
       fnums' = λn. fnums (n + 2);
+
+      (* byte_select *)
+        clr_byte_sel' = flush_i ∧ sw_rst_i; (*flush_i is tx_flush_sr is a TODO*)
+        (*FIFO outs *)
+
+        (* byte_valid (rvalid_o) *)
+        byte_valid_byte_sel: bool = ¬(st.depth_byte_sel = 0) ∧ ¬st.clr_byte_sel;
+
+        rdata_o_byte_sel = (st.data_byte_sel >>> 9*(st.data_pos_byte_sel));
+
+        (* byte_en (rdata_o ) *)
+        byte_en_byte_sel: bool = word_bit 8 word_extract (8, 0) rdata_o_byte_sel;
+
+        (* wready_o *)
+        wready_o_fifo_byte_sel: bool = st.depth_byte_sel = 0w ∧ ¬st.clr_byte_sel;
+
+      (* byte_select signals *)
+      do_drain_byte_sel: bool = byte_valid_byte_sel ∧ ¬ byte_en_byte_sel;
+      byte_ready_byte_sel: bool = wr_en_fsm ∧ do_drain_byte_sel;
+
+      word_data_byte_select =   (((word_bit 3 tx_be_i) << 8 + word_extract (31, 24)) << 27)
+                              + (((word_bit 2 tx_be_i) << 8 + word_extract (23, 16)) << 18)
+                              + (((word_bit 1 tx_be_i) << 8 + word_extract (15, 8)) << 9)
+                              + (((word_bit 0 tx_be_i) << 8 + word_extract (7, 0)))
+
+      (*FIFO control *)
+      clear_status_fifo_byte_sel = (byte_ready_byte_sel ∧ st.depth_byte_sel = 1w) ∨ clr_fifo_byte_sel;
+      clear_data_fifo_byte_sel = clear_status_fifo_byte_sel;
+      load_data_fifo_byte_sel = tx_valid_i ∧ wready_o_fifo_byte_sel;
+      pull_data_fifo_byte_sel = byte_valid_byte_sel ∧ byte_ready_byte_sel;
+
+      depth_byte_sel': word 3 = if clear_status_fifo_byte_sel then 0w
+                                else if load_data_fifo_byte_sel then 4w
+                                else if pull_data_fifo_byte_sel then (st.depth_byte_sel - 1)
+                                else if st.depth_byte_sel;
+      
+      data_pos_byte_sel': num = if clear_status_fifo_byte_sel then 0
+                                else if pull_data_fifo_byte_sel then st.data_pos_byte_sel + 1
+                                else st.data_pos_byte_sel;
+
+      data_byte_sel': word 36 = if clear_data_fifo_byte_sel then 0w
+                                else if load_data_fifo_byte_sel then word_data_byte_select
+                                else st.data_byte_sel;
+      
+      (* byte_select outs *)
+      word_ready_o_byte_sel: bool: wready_o_fifo_byte_sel;
+      byte_valid_o_byte_sel: bool = byte_valid_byte_sel ∧ byte_en_byte_sel;
+      byte_o_byte_sel: word 8 = word_extract (8, 0) rdata_o_byte_sel;
+      tx_valid_sr = byte_valid_o_byte_sel;
+
+
+      (* byte_merge *)
+      (* state controls *)
+      clr_byte_merge': sw_rst_i;
+
+      wready_byte_merge = ¬st.depth_byte_merge = 4 ∧ ¬st.clr_byte_merge;
+      rvalid_byte_merge = st.depth_byte_merge = 4 ∧ ¬st.clr_byte_merge;
+
+
+      byte_valid_byte_merge = do_fill_byte_merge ∨ rx_valid_sr; (*TODO rx_valid_sr*)
+
+      clear_status_byte_merge = (rx_ready_i ∧ rvalid_byte_merge) ∨ st.clr_byte_merge;
+      clear_data_byte_merge = clear_status_byte_merge;
+      load_data_byte_merge = byte_valid_byte_merge ∧ wready_byte_merge;
+
+      wdata_i_byte_merge: word 8 = if do_fill_byte_merge then 0w else rx_data_sr; (*TODO rx_data_sr *)
+
+      wdata_shifted_byte_merge: word 32 = wdata_i_byte_merge << (st.depth_byte_merge * 8);
+
+      (* states *)
+      depth_byte_merge': num = if clear_status_byte_merge then 0
+                                else if load_data_byte_merge then st.depth_byte_merge + 1
+                                else st.depth_byte_merge;
+
+      data_byte_merge': word 32 = if clear_data_byte_merge then 0
+                                  else load_data_byte_merge then (wdata_shifted_byte_merge || n2w st.data_byte_merge) (*this has a small potential issue see 110:prim_packer_fifo.sv the *)
+                                  else st.data_byte_merge;
+
+      (* byte_merge outs *)
+      byte_ready_byte_merge = wready_byte_merge;
+      byte_ready_o_byte_merge: bool = byte_ready_byte_merge ∧ ¬do_fill_byte_merge;
+      byte_valid_o_byte_merge: bool = rvalid_byte_merge;
+      word_data_o_byte_mrege = st.depth_byte_merge;
+
+      (* Shift register *)
+      rd_ready_o: bool = ¬st.rx_buf_valid ∨ (st.rx_buf_valid ∧ rx_ready_sr);
+      wr_ready_o: bool = tx_valid_sr;
+      rd_en_i: bool = F; (* TODO uses data from FSM need to get things around right way
+                            FSM can depend on values from sr *)
+      rx_valid_o: bool = st.rx_buf_valid;
+      rx_buf_valid': bool = if sw_rst_i then F
+                            else if (rd_en_i ∧ rd_ready_o) then T
+                            else if (rx_valid_o ∧ rx_ready_sr) then F
+                            else st.rx_buf_valid;
     in
       <|
         fnums := fnums';
@@ -276,8 +379,13 @@ Definition spi_host_tick_def:
         cmd_wr_en := cmd_wr_en';
         cmd_len := cmd_len';
         bit_counter := bit_counter';
-        byte_counter := byte_counter;
-        byte_ending := byte_ending;
+        byte_counter := byte_counter';
+        byte_ending := byte_ending';
+        rx_buf_valid := rx_buf_valid';
+        depth_byte_sel := depth_byte_sel';
+        data_pos_byte_sel := data_pos_byte_sel';
+        data_byte_sel := data_byte_sel';
+        clr_byte_sel := clr_byte_sel';
       |>
 End
 
