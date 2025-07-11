@@ -5,11 +5,10 @@ val _ = new_theory "spi_hostCircuitState";
 
 Datatype:
   spi_host_circuit_ext_state = <|
-    (* 48-bit (DefaultCfg.AddrWidth) addr + 32-bit data + 4-bit strobe + 2 bits of write/valid *)
-    reg_req_i: 86 word;
+    (* 40-bit (DefaultCfg.AddrWidth) addr + 32-bit data + 4-bit strobe + 2 bits of write/valid *)
+    reg_req_i: 78 word;
 
-    cio_scl_i: bool;
-    cio_sda_i: bool;
+    cio_sd_i: 4 word;
   |>
 End
 
@@ -18,26 +17,17 @@ Datatype:
     (* 32-bit data + 2 bits of error/ready *)
     reg_rsp_o: 34 word;
 
-    cio_scl_o: bool;
-    cio_scl_en_o: bool;
-    cio_sda_o: bool;
-    cio_sda_en_o: bool;
+    cio_sck_o: bool;
+    cio_sck_en_o: bool;
+    cio_csb_o: 1 word; (*We may want to expand these for additional CSBs *)
+    cio_csb_en_o: 1 word;
 
-    intr_fmt_threshold_o: bool;
-    intr_rx_threshold_o: bool;
-    intr_fmt_overflow_o: bool;
-    intr_rx_overflow_o: bool;
-    intr_nak_o: bool;
-    intr_scl_interference_o: bool;
-    intr_sda_interference_o: bool;
-    intr_stretch_timeout_o: bool;
-    intr_sda_unstable_o: bool;
-    intr_cmd_complete_o: bool;
-    intr_tx_stretch_o: bool;
-    intr_tx_overflow_o: bool;
-    intr_acq_full_o: bool;
-    intr_unexp_stop_o: bool;
-    intr_host_timeout_o: bool;
+    cio_sd_o: 4 word; (*We are only using 2 bits but hardware as 4, to support Quad SPI *)
+    cio_sd_en_o: 4 word;
+
+    intr_error_o: bool;
+    intr_spi_event_o: bool;
+
 
     (* The storage for the values of all our memory-mapped I/O registers.
      *

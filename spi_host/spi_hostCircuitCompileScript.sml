@@ -9,26 +9,15 @@ local
   val outputs = [
     "reg_rsp_o",
 
-    "cio_scl_o",
-    "cio_scl_en_o",
-    "cio_sda_o",
-    "cio_sda_en_o",
+    "cio_csk_o",
+    "cio_csk_en_o",
+    "cio_csb_o",
+    "cio_csb_en_o",
+    "cio_sd_o",
+    "cio_sd_en_o",
 
-    "intr_fmt_threshold_o",
-    "intr_rx_threshold_o",
-    "intr_fmt_overflow_o",
-    "intr_rx_overflow_o",
-    "intr_nak_o",
-    "intr_scl_interference_o",
-    "intr_sda_interference_o",
-    "intr_stretch_timeout_o",
-    "intr_sda_unstable_o",
-    "intr_cmd_complete_o",
-    "intr_tx_stretch_o",
-    "intr_tx_overflow_o",
-    "intr_acq_full_o",
-    "intr_unexp_stop_o",
-    "intr_host_timeout_o"
+    "intre_error_o",
+    "int_spi_event_o",
   ];
   val comms = spi_host_reg_comms @ [];
 in
