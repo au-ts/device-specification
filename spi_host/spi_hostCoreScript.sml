@@ -15,40 +15,40 @@ Datatype:
   | WaitIdle
 End
 
-(* I don't think this has the packing? Is a TOFIX *)
 Datatype: 
   configopts = <|
     clkdiv: 16 word;
     csnidle: 4 word;
     csntrail: 4 word;
     csnlead: 4 word;
-    reserved: 1 word;
     fullcyc: 1 word;
     cpha: 1 word;
     cpol: 1 word;
   |>
 End
 
-Datatype: 
-  segment = <|
+Datatype:
+  command = <|
+    csid: 1 word; (* TODO csid needs a CSW defined length, put constant how do this? *)
     speed: 2 word;
-    cmd_wr_en: 1 word;
-    cmd_rd_en: 1 word;
+    wr_en: bool;
+    rd_en: bool;
     len: 9 word;
     csaat: 1 word;
   |>
 End
 
 Datatype:
-  command = <|
-    csid: 1 word; (* TODO csid needs a CSW defined length, put constant how do this? *)
-    segment: segment;
-    config: configopts;
+  tx_data = <|
+    data: 32 word;
+    be: 4 word;
   |>
 End
 
-
-
+val command_depth = 64;
+val rx_fifo_depth = 64;
+val tx_fifo_depth = 72;
+val num_cs = 1;
 
 Datatype:
   spi_host_state = <|
@@ -76,39 +76,70 @@ Datatype:
     buffered_notif : spi_host_notif option;
 
 
+    commands: command list;
+
     config : configopts;
     fsm_state : fsmState;
+    clock_counter: 16 word;
     counter : 4 word;
-    new_command: bool;
-    switch_required: bool;
+    byte_starting_cpha0: bool;
+    bit_shifting_cpha0: bool;
+    byte_ending_cpha0: bool;
     bit_counter: 3 word;
-    last_bit: bool;
     byte_counter: 9 word;
-    last_byte: bool;
+    
     csaat: bool;
     csid: 1 word;
     csid_q: 1 word;
-    stall: bool;
+    select_data: 32 word;
+    select_be: 4 word;
+    select_byte_pos: num;
+    select_byte_out: 8 word;
+    select_valid_o: bool;
+
+    merge_pos: num;
+    merge_word_data: 32 word;
+
     cmd_wr_en: bool;
     cmd_len: 9 word;
+    cmd_speed: 2 word;
 
-
-    (* Potential constants *)
-
-    (* Both of these depend on kind of SPI standard/dual/quad, but we are likely to only consider standard 
-     It is however possible for these values to be modified in execution; 
-     I guess so a host can communicate with devices that support varied SPI standards *)
-    start_bit: 3 word; (* 7 *)
-    shift_size: 3 word; (* 1 *)
+    rx_data_fifo: 32 word list;
+    tx_data_fifo: tx_data list;
 
     (* SR state *)
     rx_buf_valid: bool;
+    rx_buf: 9 word;
   |>
 End
 
+Definition spi_host_configopts_0_to_configopts:
+  spi_host_configopts_0_to_configopts (val: spi_host_configopts_0): configopts = 
+  <|
+    clkdiv := val.clkdiv_0;
+    csnidle := val.csnidle_0;
+    csntrail := val.csntrail_0;
+    csnlead := val.csnlead_0;
+    fullcyc := val.fullcyc_0;
+    cpha := val.cpha_0;
+    cpol := val.cpol_0;
+  |>
+End
 
 Definition spi_host_eat_fnum:
   spi_host_eat_fnum st = (st with fnums := st.fnums o SUC, st.fnums 0)
+End
+
+Definition spi_host_core_command:
+  spi_host_core_command(csid: 1 word, update: spi_host_command_update): command =
+  <|
+    csid := csid;
+    speed := update.speed;
+    wr_en := word_bit 1 update.direction;
+    rd_en := word_bit 0 update.direction;
+    csaat := update.csaat;
+    len := update.len;
+  |>
 End
 
 Datatype:
@@ -119,6 +150,20 @@ Datatype:
   |>
 End
 
+Definition spi_host_core_no_error:
+  spi_host_core_no_error(status: spi_host_error_status): bool =
+    (status.cmdbusy = 0w ∧
+    status.overflow = 0w ∧
+    status.underflow = 0w ∧
+    status.cmdinval = 0w ∧
+    status.csidinval = 0w ∧
+    status.accessinval = 0w)
+End
+
+Definition bool2word1:
+  bool2word1(b: bool): 1 word = 
+    if b then 1w else 0w
+End
 
 (* Simulates one clock cycle of the spi_host core.
  *
@@ -131,261 +176,307 @@ Definition spi_host_tick_def:
   spi_host_tick (hwext_notif: spi_host_hwext_notif option) (st: spi_host_state) =
     let
       fnums = st.fnums;
-
-      delay = <| 
-        csnlead   := st.config.csnlead; (* TODO *)
-        csntrail  := st.config.csntrail;
-        csnidle   := st.config.csnidle;
-      |>;
-
-      curr_delay = case st.fsm_state of 
-          WaitLead => delay.csnlead
-        | WaitTrail => delay.csntrail
-        | WaitIdle => delay.csnidle
-        | CSBSwitch => delay.csnidle
-        | _ => 0w;
-
-      fsm_state' = case st.fsm_state of 
-          Idle                =>  if st.new_command then
-                                    if st.switch_required then ConfigSwitch
-                                    else WaitLead
-                                  else Idle
-        | ConfigSwitch        =>  if st.counter > 1w then ConfigSwitch
-                                  else WaitLead
-        | WaitLead            =>  if st.counter > 1w then WaitLead
-                                  else IntClockHigh
-        | IntClockHigh        =>  if st.last_bit ∧ st.last_byte then
-                                    if st.csaat then 
-                                      if st.new_command then
-                                        if st.switch_required then WaitTrail
-                                        else IntClockLow
-                                      else IdleCSBActive (* Potential bypass of IdleCSBActive state *)
-                                    else WaitTrail 
-                                  else IntClockLow
-        | IntClockLow         =>  IntClockHigh
-        | IdleCSBActive       =>  if st.new_command then
-                                    if st.switch_required then WaitTrail
-                                    else IntClockLow
-                                  else IdleCSBActive  
-        | WaitTrail           =>  if st.counter > 1w then WaitTrail
-                                  else WaitIdle
-        | WaitIdle            =>  if st.counter > 1w then WaitIdle
-                                    else 
-                                      if st.new_command then
-                                        if st.switch_required then ConfigSwitch
-                                          else WaitLead
-                                      else Idle; (* Potential bypass of Idle state *)
-
+      command_valid_i: bool = (LENGTH st.commands > 0);
       
-      state_changing = fsm_state' != st.fsm_state;
-      counter' = if state_changing then delay 
-                  else if st.counter > 0w then st.counter - 1w 
-                       else 0w; 
-      
-      
-      (* fnums 0 used for command_valid_i *)
-      command_valid_i : 1 word = n2w $ fnums 0;
+      sw_rst_i: bool = word_bit 0 (st.regs.control.sw_rst);
+      en_i: bool = ((st.regs.control.spien = 1w) ∧ spi_host_core_no_error(st.regs.error_status));
 
-      sw_rst_i: bool = word_bit 0 (n2w $ fnums 1); (*TODO*)
-      fsm_en: bool = word_bit 0 (n2w $ fnums 2);
+      fsm_en = (en_i ∧ st.clock_counter = 0w);
       
-      command_i: command;
-      (* fnums 1 used for command_i *)
-      (* csid_i : 1 word = n2w $ fnums 1;
-      
-      command_i.csid = csid_i; *)
+      empty_command_update: spi_host_command_update = <|len:= 0w; csaat:= 0w; speed:= 0w; direction:= 0w; |>;
 
-      command_ready_idle_csb_active : bool =  if command_valid_i = 0w then F
-                                              else (command_i.csid = st.csid_q);
+      (q: spi_host_command_update, qe: bool) = case hwext_notif of
+        SOME (Write (command_write update_val)) => (update_val, T)
+        | _ => (empty_command_update, F);
+
+      recv_command: bool = qe;
+      command_i: command = spi_host_core_command(st.csid, q);
+      commands' = if recv_command then APPEND st.commands [command_i] else st.commands;
+
+      next_command: command = HD st.commands;
+
+      command_ready_idle_csb_active: bool = if command_valid_i then ¬(next_command.csid = st.csid_q)
+                                              else T;
 
       command_ready_int: bool = if st.fsm_state = Idle ∨ st.fsm_state = WaitIdle then T
                                 else if st.fsm_state = IntClockHigh ∨ st.fsm_state = IdleCSBActive then command_ready_idle_csb_active
                                 else F;
-      (* Done in assign this might not be right way to model? *)
-      new_command': bool = (command_ready_int ∧ (word_bit 0 command_valid_i));
+      new_command: bool = (command_ready_int ∧ command_valid_i);
+
+      commands'' = if new_command then TL commands' else commands';
+
+      config' = if new_command ∧ (st.regs.csid.csid = 1w) then spi_host_configopts_0_to_configopts(st.regs.configopts_0)
+                  else st.config; 
+	    (* Could be good to have this all config opts maybe? But we are only dealling with one csid *)
+
+      cmd_speed' = if new_command then next_command.speed else st.cmd_speed;
+
+      start_bit: 3 word = if cmd_speed' = 0w then 7w else if cmd_speed' = 1w then 6w else 4w;
+      shift_size: 3 word = if cmd_speed' = 0w then 1w else if cmd_speed' = 1w then 2w else 4w;
+
+      switch_required = ¬(config' = st.config);
+
+      clock_counter': 16 word = if sw_rst_i then 0w
+                                else if ¬en_i then st.clock_counter
+                                else if st.fsm_state = Idle ∨ st.fsm_state = IdleCSBActive then 0w
+                                else if new_command then st.config.clkdiv
+                                else if (st.clock_counter = 0w) then st.config.clkdiv
+                                else st.clock_counter - 1w;
+      delay = <| 
+        csnlead   := st.config.csnlead;
+        csntrail  := st.config.csntrail;
+        csnidle   := st.config.csnidle;
+      |>;
+
+      last_bit = (st.bit_counter = 0w);
+      last_byte = (st.byte_counter = 0w);
+
+      state_after_idle =    if new_command then
+                              if switch_required then ConfigSwitch
+                              else WaitLead
+                            else Idle;
+      state_after_idle_csb_active = if new_command then
+                                      if switch_required then WaitTrail
+                                      else IntClockLow
+                                    else IdleCSBActive;
+
+      fsm_state' = case st.fsm_state of 
+          Idle                =>  state_after_idle
+        | ConfigSwitch        =>  if st.counter > 1w then ConfigSwitch
+                                  else WaitLead
+        | WaitLead            =>  if st.counter > 1w then WaitLead
+                                  else IntClockHigh
+        | IntClockHigh        =>  if last_bit ∧ last_byte then
+                                    if st.csaat then state_after_idle_csb_active
+                                    else WaitTrail 
+                                  else IntClockLow
+        | IntClockLow         =>  IntClockHigh
+        | IdleCSBActive       =>  state_after_idle_csb_active
+        | WaitTrail           =>  if st.counter > 1w then WaitTrail
+                                  else WaitIdle
+        | WaitIdle            =>  if st.counter > 1w then WaitIdle
+                                  else state_after_idle;
+
+      curr_delay = case fsm_state' of 
+          WaitLead => delay.csnlead
+        | WaitTrail => delay.csntrail
+        | WaitIdle => delay.csnidle
+        | ConfigSwitch => delay.csnidle
+        | _ => 0w;
+
+      state_changing = ¬(fsm_state' = st.fsm_state);
+      counter' = if state_changing then curr_delay 
+                 else if st.counter > 0w then st.counter - 1w 
+                 else 0w; 
+
+      cpha = word_bit 0 st.config.cpha;
+      
+      byte_starting_cpha0' = (¬(sw_rst_i) ∧ state_changing ∧ 
+                            ((fsm_state' = WaitLead) ∨ (fsm_state' = IntClockLow ∧ st.bit_counter = 0w)));
+
+	    byte_starting =  if cpha then state_changing ∧ st.byte_starting_cpha0
+                        else byte_starting_cpha0';
+
+
+      bit_shifting_cpha0' = ((sw_rst_i = F) ∧ state_changing ∧ (fsm_state' = IntClockLow ∧ ¬(st.bit_counter = 0w)));
+
+
+
+      bit_shifting = if cpha then st.bit_shifting_cpha0 ∧ state_changing
+                      else bit_shifting_cpha0';
 
       bit_counter_d = if sw_rst_i then 0w
                       else if ¬fsm_en then st.bit_counter
-                      else if st.byte_starting then st.start_bit
-                      else if st.bit_shifting then st.bit_counter - st.shift_size
+                      else if byte_starting then start_bit
+                      else if bit_shifting then st.bit_counter - shift_size
                       else st.bit_counter;
 
-      byte_starting_cpha0 = (¬(sw_rst_i) ∧ state_changing ∧ 
-                            ((st.fsm_state = WaitLead) ∨ (st.fsm_state = IntClockLow ∧ st.bit_counter = 0)));
+      byte_ending_cpha0' = (¬(sw_rst_i) ∧ state_changing ∧ ((st.fsm_state = IntClockHigh) ∧ (st.bit_counter = 0w)));
+      byte_ending = if cpha then st.byte_ending_cpha0 ∧ state_changing
+                    else byte_ending_cpha0';
 
-	    byte_starting' = (byte_starting_cpha0 ∧ (if cpha then state_changing else T));
+      csaat_d = if new_command then word_bit 0 command_i.csaat else st.csaat;
+      cmd_len_d = if new_command then command_i.len else st.cmd_len;
+      cmd_wr_en_d = if new_command then command_i.wr_en else st.cmd_wr_en;
 
-
-      bit_shifting_cpha0 = ((sw_rst_i = F) ∧ state_changing ∧ (st.fsm_state = IntClockLow ∧ st.bit_counter != 0));
-
-      bit_shifting' = (bit_shifting_cpha0 ∧ (if cpha then state_changing else T));
-
-      bit_counter' = if st.stall then st.bit_counter else bit_counter_d;
-      last_bit' = (st.bit_counter = 0w);
-
-      cmd_len' = if st.new_command then command_i.segment.len else st.cmd_len;
-
-      byte_ending_cpha0 = (¬(sw_rst_i) ∧ state_changing ∧ (st.fsm_state = IntClockHigh ∧ st.bit_counter = 0));
-      byte_ending' = (byte_ending_cpha0 ∧ (if cpha then state_changing else T));
-
-      byte_counter_d = if sw_rst_i then 0w
+      byte_counter_d: 9 word = if sw_rst_i then 0w
                         else if ¬fsm_en then st.byte_counter
-                        else if st.new_command then cmd_len
-                        else if st.byte_ending then st.byte_counter - 1
+                        else if new_command then cmd_len_d
+                        else if byte_ending then st.byte_counter - 1w
                         else st.byte_counter;
-      byte_counter' = if st.stall then st.byte_counter else byte_counter_d;
+
+      sr_wr_ready_i = st.select_valid_o;
+      wr_en_internal = (byte_starting ∧ cmd_wr_en_d);
+
+
+
+      (* SR output signals *)
+      merge_byte_ready_o: bool = ¬(st.merge_pos = 4); (*This is an ugly place to put this but needed for line bellow TODO: clean this up *)
+
       
-      
-      last_byte' = (st.byte_counter = 0w);
+      rd_ready_o = ((¬st.rx_buf_valid) ∨ (st.rx_buf_valid ∧ merge_byte_ready_o));
+      sr_rd_ready_i = rd_ready_o;
 
-      switch_required' = command_i.csid != csid_q;
-
-      csaat' = if st.new_command then command_i.segment.csaat else st.csaat;
-
-      csid' = if st.new_command then command_i.csid else st.csid_q;
-      csid_q' = if st.new_command ∧ (st.stall = F) then st.csid else st.csid_q;
-
-      (*Core in *)
-      tx_valid_i: bool = word_bit 0 (n2w $ fnums 3);
-      tx_data_i: word 32 = n2w $ fnums 5;
-      tx_be_i: word 4 = n2w $ fnums 6;
-      rx_ready_i: bool = word_bit 0 (new $ fnums 7);
-
-      (*FSM in *)
-      sr_wr_ready_i: bool = tx_valid_sr; (*Goes throught shift register but just assigning wires *)
-      sr_rd_ready_i: bool = word_bit 0 (n2w $ fnums 4);
-      
-
-      cmd_wr_en' = if st.new_command then command_i.segment.cmd_wr_en else st.cmd_wr_en; (* always_comb *)
-      
-      wr_en_internal = (byte_starting ∧ st.cmd_wr_en);
+      (* Back to FSM *)
       rd_en_internal = bit_shifting;
-      (* on assign *)
       tx_stall_o: bool = (wr_en_internal ∧ ¬sr_wr_ready_i);
-      rx_stall_o: bool = (wr_en_internal ∧ ¬sr_wr_ready_i);
+      rx_stall_o: bool = (rd_en_internal ∧ ¬sr_rd_ready_i);
       
-      stall': bool = (tx_stall_o ∨ rx_stall_o);
+      stall: bool = (tx_stall_o ∨ rx_stall_o);
+
+      wr_en_o: bool = (wr_en_internal ∧ ¬stall);
+      rd_en_fsm_o: bool = (rd_en_internal ∧ ¬stall);
+
+
+      (* byte select model*)
+      (* TODO these come from registers need to handle legit *)
+      tx_data_i: 32 word = (HD st.tx_data_fifo).data;
+      tx_be_i: 4 word = (HD st.tx_data_fifo).be;
+      word_valid_i: bool = (LENGTH st.tx_data_fifo > 0);
+      byte_ready_i: bool = wr_en_o;
+
+      byte_select_advance = (word_valid_i ∨ byte_ready_i ∨ (st.select_byte_pos > 0 ∧ word_bit (4-st.select_byte_pos) st.select_be));
+      
+      select_data' = if word_valid_i then tx_data_i else st.select_data;
+      select_be' = if word_valid_i then tx_be_i else st.select_be;
+      
+      select_byte_en: bool =  if (st.select_byte_pos > 0) then
+                                (word_bit (4-st.select_byte_pos) st.select_be)
+                              else F;
+
+      select_byte_ready: bool = (byte_ready_i ∧ ((st.select_byte_pos > 0) ∨ select_byte_en));
+
+      select_byte_pos': num = if word_valid_i then 4
+                              else if select_byte_ready then 
+                                if st.select_byte_pos > 0 then st.select_byte_pos - 1 
+                                else st.select_byte_pos
+                              else st.select_byte_pos;
+
+      select_word_ready_o = (st.select_byte_pos = 0);
+
+      select_byte_out': 8 word = if byte_select_advance then
+                                  (((4-st.select_byte_pos)*8 + 7) >< ((4-st.select_byte_pos) * 8)) st.select_data
+                                  else st.select_byte_out;
+      
+      select_valid_o': bool = if byte_select_advance then word_bit (4-st.select_byte_pos) st.select_be
+                              else st.select_valid_o;
+      
+      (* byte_merge model *)
+      (* TODO get data properlly *)
+      merge_byte_in: 8 word = (7 >< 0) st.rx_buf;
+      merge_valid_in: bool = st.rx_buf_valid;
+      merge_word_ready_in: bool = (LENGTH st.rx_data_fifo < 64);
+      
+      
+      merge_byte_valid = (merge_valid_in ∨ (st.merge_pos < 4));
+
+      merge_word_data': 32 word = if merge_byte_valid then (32 >< 9) (st.merge_word_data << 8) @@ merge_byte_in
+                                  else st.merge_word_data;
+      
+      merge_pos': num = if merge_byte_valid then 
+                          if st.merge_pos = 4 then 0
+                            else st.merge_pos + 1 
+                        else 
+                          if merge_word_ready_in then 0 
+                          else st.merge_pos;
+
+
+      merge_word_o = st.merge_word_data;
+      merge_word_valid_o: bool = (st.merge_pos = 4);
+      merge_ready_o: bool = (st.merge_pos < 4);
+      
+      (*SR control *)
+      rx_ready_sr_i = merge_ready_o;
+      rx_buf_valid': bool = if sw_rst_i then F
+                            else if rd_en_fsm_o ∧ rd_ready_o then T
+                            else if st.rx_buf_valid ∧ rx_ready_sr_i then F
+                            else st.rx_buf_valid;
+
+      (* ----- End of FSM ------ *)
+      bit_counter' = if stall then st.bit_counter else bit_counter_d;
+      byte_counter' = if stall then st.byte_counter else byte_counter_d;
+      cmd_len' = if new_command ∧ ¬stall then cmd_len_d else st.cmd_len;
+      
+      cmd_wr_en' = if new_command ∧ ¬stall then cmd_wr_en_d else st.cmd_wr_en;
+      csaat' = if new_command ∧ ¬stall then csaat_d else st.csaat;
+      
+      csid' = if new_command then command_i.csid else st.csid_q;
+      csid_q' = if new_command ∧ ¬stall then st.csid else st.csid_q;
+
+      (* Adding to data_fifos *)
+      (*TODO get from win register *)
+      tx_data_new: tx_data =  <|
+        data:= 0w;
+        be:= 0w;
+      |>;
+      tx_ready_o = select_word_ready_o;
+      tx_data_fifo' = if tx_ready_o then APPEND st.tx_data_fifo [tx_data_new] else st.tx_data_fifo;
+
+      rx_valid: bool = merge_word_valid_o;
+      rx_data_new = merge_word_o;
+      rx_data_fifo' = if rx_valid then APPEND st.rx_data_fifo [rx_data_new] else st.rx_data_fifo;
+
+	
+      (* Errors *)
+      tx_valid: bool = F; (* Need to get stuff from win reg *)
+      access_valid: bool = F; (* Need to get stuff from win reg *)
+      error_access_inval = (tx_valid ∧ ¬access_valid);
+      command_busy = (LENGTH st.commands < 64);
+      error_csid_inval = (command_valid_i ∧ command_busy ∧ ¬(regs.csid.csid < 1w));
+      error_cmd_inval:bool  = (command_valid_i ∧ command_busy 
+                          ∧ ¬((command_i.speed = 0w) ∨ ((command_i.speed < 3w) ∧ ¬(command_i.wr_en = command_i.rd_en))));
+
+      error_overflow: bool = (tx_valid ∧ ¬tx_ready_o);
+      (*rx_ready_i into core*)
+      error_underflow: bool = (merge_word_ready_in ∧ ¬rx_valid);
+      error_busy: bool = (command_valid_i ∧ ¬command_busy);
+
+      error_stat: spi_host_error_status = <|
+        cmdbusy := bool2word1(error_busy);
+        overflow := bool2word1(error_overflow);
+        underflow := bool2word1(error_underflow);
+        cmdinval := bool2word1(error_cmd_inval);
+        csidinval := bool2word1(error_csid_inval);
+        accessinval := bool2word1(error_access_inval);
+      |>;
+
+      
+      regs' = st.regs with <| error_status := error_stat |>;
 
       fnums' = λn. fnums (n + 2);
-
-      (* byte_select *)
-        clr_byte_sel' = flush_i ∧ sw_rst_i; (*flush_i is tx_flush_sr is a TODO*)
-        (*FIFO outs *)
-
-        (* byte_valid (rvalid_o) *)
-        byte_valid_byte_sel: bool = ¬(st.depth_byte_sel = 0) ∧ ¬st.clr_byte_sel;
-
-        rdata_o_byte_sel = (st.data_byte_sel >>> 9*(st.data_pos_byte_sel));
-
-        (* byte_en (rdata_o ) *)
-        byte_en_byte_sel: bool = word_bit 8 word_extract (8, 0) rdata_o_byte_sel;
-
-        (* wready_o *)
-        wready_o_fifo_byte_sel: bool = st.depth_byte_sel = 0w ∧ ¬st.clr_byte_sel;
-
-      (* byte_select signals *)
-      do_drain_byte_sel: bool = byte_valid_byte_sel ∧ ¬ byte_en_byte_sel;
-      byte_ready_byte_sel: bool = wr_en_fsm ∧ do_drain_byte_sel;
-
-      word_data_byte_select =   (((word_bit 3 tx_be_i) << 8 + word_extract (31, 24)) << 27)
-                              + (((word_bit 2 tx_be_i) << 8 + word_extract (23, 16)) << 18)
-                              + (((word_bit 1 tx_be_i) << 8 + word_extract (15, 8)) << 9)
-                              + (((word_bit 0 tx_be_i) << 8 + word_extract (7, 0)))
-
-      (*FIFO control *)
-      clear_status_fifo_byte_sel = (byte_ready_byte_sel ∧ st.depth_byte_sel = 1w) ∨ clr_fifo_byte_sel;
-      clear_data_fifo_byte_sel = clear_status_fifo_byte_sel;
-      load_data_fifo_byte_sel = tx_valid_i ∧ wready_o_fifo_byte_sel;
-      pull_data_fifo_byte_sel = byte_valid_byte_sel ∧ byte_ready_byte_sel;
-
-      depth_byte_sel': word 3 = if clear_status_fifo_byte_sel then 0w
-                                else if load_data_fifo_byte_sel then 4w
-                                else if pull_data_fifo_byte_sel then (st.depth_byte_sel - 1)
-                                else if st.depth_byte_sel;
-      
-      data_pos_byte_sel': num = if clear_status_fifo_byte_sel then 0
-                                else if pull_data_fifo_byte_sel then st.data_pos_byte_sel + 1
-                                else st.data_pos_byte_sel;
-
-      data_byte_sel': word 36 = if clear_data_fifo_byte_sel then 0w
-                                else if load_data_fifo_byte_sel then word_data_byte_select
-                                else st.data_byte_sel;
-      
-      (* byte_select outs *)
-      word_ready_o_byte_sel: bool: wready_o_fifo_byte_sel;
-      byte_valid_o_byte_sel: bool = byte_valid_byte_sel ∧ byte_en_byte_sel;
-      byte_o_byte_sel: word 8 = word_extract (8, 0) rdata_o_byte_sel;
-      tx_valid_sr = byte_valid_o_byte_sel;
-
-
-      (* byte_merge *)
-      (* state controls *)
-      clr_byte_merge': sw_rst_i;
-
-      wready_byte_merge = ¬st.depth_byte_merge = 4 ∧ ¬st.clr_byte_merge;
-      rvalid_byte_merge = st.depth_byte_merge = 4 ∧ ¬st.clr_byte_merge;
-
-
-      byte_valid_byte_merge = do_fill_byte_merge ∨ rx_valid_sr; (*TODO rx_valid_sr*)
-
-      clear_status_byte_merge = (rx_ready_i ∧ rvalid_byte_merge) ∨ st.clr_byte_merge;
-      clear_data_byte_merge = clear_status_byte_merge;
-      load_data_byte_merge = byte_valid_byte_merge ∧ wready_byte_merge;
-
-      wdata_i_byte_merge: word 8 = if do_fill_byte_merge then 0w else rx_data_sr; (*TODO rx_data_sr *)
-
-      wdata_shifted_byte_merge: word 32 = wdata_i_byte_merge << (st.depth_byte_merge * 8);
-
-      (* states *)
-      depth_byte_merge': num = if clear_status_byte_merge then 0
-                                else if load_data_byte_merge then st.depth_byte_merge + 1
-                                else st.depth_byte_merge;
-
-      data_byte_merge': word 32 = if clear_data_byte_merge then 0
-                                  else load_data_byte_merge then (wdata_shifted_byte_merge || n2w st.data_byte_merge) (*this has a small potential issue see 110:prim_packer_fifo.sv the *)
-                                  else st.data_byte_merge;
-
-      (* byte_merge outs *)
-      byte_ready_byte_merge = wready_byte_merge;
-      byte_ready_o_byte_merge: bool = byte_ready_byte_merge ∧ ¬do_fill_byte_merge;
-      byte_valid_o_byte_merge: bool = rvalid_byte_merge;
-      word_data_o_byte_mrege = st.depth_byte_merge;
-
-      (* Shift register *)
-      rd_ready_o: bool = ¬st.rx_buf_valid ∨ (st.rx_buf_valid ∧ rx_ready_sr);
-      wr_ready_o: bool = tx_valid_sr;
-      rd_en_i: bool = F; (* TODO uses data from FSM need to get things around right way
-                            FSM can depend on values from sr *)
-      rx_valid_o: bool = st.rx_buf_valid;
-      rx_buf_valid': bool = if sw_rst_i then F
-                            else if (rd_en_i ∧ rd_ready_o) then T
-                            else if (rx_valid_o ∧ rx_ready_sr) then F
-                            else st.rx_buf_valid;
     in
       <|
         fnums := fnums';
         buffered_notif := NONE;
         regs := st.regs;
+        clock_counter := clock_counter';
         counter := counter';
         fsm_state := fsm_state';
-        new_command := new_command';
-        switch_required := switch_required';
-        last_bit := last_bit';
-        last_byte := last_byte';
+        byte_starting_cpha0 := byte_starting_cpha0';
+        bit_shifting_cpha0 := bit_shifting_cpha0';
         csaat := csaat';
         csid := csid';
         csid_q := csid_q';
-        stall := stall';
+        select_data := select_data';
+        select_byte_pos := select_byte_pos';
+        select_byte_out := select_byte_out';
+        select_valid_o := select_valid_o';
+        merge_word_data := merge_word_data';
+        merge_pos := merge_pos';
+
         cmd_wr_en := cmd_wr_en';
         cmd_len := cmd_len';
         bit_counter := bit_counter';
         byte_counter := byte_counter';
-        byte_ending := byte_ending';
+        byte_ending_cpha0 := byte_ending_cpha0';
+
+        commands := commands'';
         rx_buf_valid := rx_buf_valid';
-        depth_byte_sel := depth_byte_sel';
-        data_pos_byte_sel := data_pos_byte_sel';
-        data_byte_sel := data_byte_sel';
-        clr_byte_sel := clr_byte_sel';
+
+        cmd_speed := cmd_speed';
+
+        tx_data_fifo := tx_data_fifo';
+        rx_data_fifo := rx_data_fifo';
       |>
 End
 
