@@ -126,7 +126,7 @@ QED
 
 Theorem nb_wstrb:
   (!i. word_bit i (wstrb: word4) <=> i < nb) /\ n + 1 = dimindex (:'b) ==>
-  (nb > n <=> ((n >< 0) wstrb: 'b word) = -1w)
+  (((n >< 0) wstrb: 'b word) = -1w <=> nb > n)
 Proof
   rpt strip_tac
   >> full_simp_tac (boss_ss () ++ fcpLib.FCP_ss) [arithmeticTheory.GREATER_DEF, word_bit_def, word_extract_def, WORD_NEG_1_T, w2w, word_bits_def, Cong AND_CONG, arithmeticTheory.LE_LT1]
@@ -134,7 +134,21 @@ Proof
   >> simp []
 QED
 
-val all_ones_rewrites = map (fn n => ``-1w: ^(n |> Arbnum.fromInt |> fcpLib.index_type |> ty_antiq) word`` |> EVAL |> GSYM |> Once) [1, 2, 3, 4];
+val nb_wstrb_insts = [1, 2, 3, 4] |> map (fn bits =>
+  let
+    val all_ones_val = EVAL (wordsSyntax.mk_wordii (1, bits) |> wordsSyntax.mk_word_2comp);
+  in
+    nb_wstrb
+      |> INST [``n: num`` |-> numSyntax.term_of_int (bits - 1)]
+      |> INST_TYPE [``:'b`` |-> fcpSyntax.mk_int_numeric_type bits]
+      |> SRULE [all_ones_val]
+  end);
+
+Triviality GT_GE1:
+  (a: num) > b <=> a >= b + 1
+Proof
+  decide_tac
+QED
 
 Theorem i2c_req_error_i2c_write:
   cheshire_req_rel (SOME (nb, offset, SOME wdata)) req ==>
@@ -145,11 +159,8 @@ Proof
   >> asm_simp_tac std_ss [i2c_write_def, dimword_def, dimindex_7, w2n_eq_iff_eq_n2w]
   >> rpt TOP_CASE_TAC
   >> simp [i2c_req_error_def]
-  (* We need to re-evaluate this every time so that Once doesn't mark itself as
-   * used after the first subgoal and fail to apply these to any of the others. *)
-  >> goal_term (fn _ => pure_rewrite_tac (map Once all_ones_rewrites))
-  >> dep_rewrite.DEP_REWRITE_TAC [GSYM nb_wstrb]
-  >> simp []
+  >> dep_rewrite.DEP_REWRITE_TAC nb_wstrb_insts
+  >> fs [GT_GE1]
 QED
 
 Theorem i2c_req_error_i2c_read:
@@ -187,7 +198,7 @@ Theorem i2c_reg_top_rsp_ready_error_inner:
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid)
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error)
   ==> rsp.ready /\ rsp.error = i2c_req_error req
 Proof
   qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
@@ -214,7 +225,7 @@ Theorem i2c_reg_top_rsp_correct_inner:
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid)
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error)
   /\ i2c_state_rel st (i2c fext fbits n)
   /\ cheshire_req_rel req_m req_c
   ==> rsp.ready
@@ -259,8 +270,7 @@ Proof
   >> rpt TOP_CASE_TAC
   >> rpt strip_tac
   >> fs [i2c_hwext_notif_rel_def, i2c_req_error_def, w2n_eq_iff_eq_n2w]
-  >> goal_term (fn _ => pure_rewrite_tac (map Once all_ones_rewrites))
-  >> dep_rewrite.DEP_REWRITE_TAC [GSYM nb_wstrb]
+  >> dep_rewrite.DEP_REWRITE_TAC nb_wstrb_insts
   >> simp []
   >> first_x_assum (assume_tac o GSYM)
   >> simp []
@@ -277,11 +287,12 @@ Proof
   >> fs [i2c_hwext_notif_rel_def, i2c_req_error_def, w2n_eq_iff_eq_n2w]
 QED
 
-Theorem i2c_req_fext_inner:
+Theorem i2c_parsed_signals_inner:
   let
     i2c = mk_module (procs (ffs1 ++ [i2c_reg_top_ff] ++ ffs2)) (procs ([i2c_reg_top_comb_1] ++ combs ++ [i2c_reg_top_comb_2])) i2c_circuit_init;
     req = reg_req_decode (fext n).reg_req_i: 7 reg_req;
     s' = i2c fext fbits n;
+    rsp = reg_rsp_decode s'.reg_rsp_o;
   in
   (!proc fext s s'. MEM proc (ffs1 ++ ffs2 ++ combs) ==>
     let
@@ -289,20 +300,21 @@ Theorem i2c_req_fext_inner:
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid)
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error)
   ==> s'.addr = req.addr /\ s'.write = req.write /\ s'.wdata = req.wdata
-    /\ s'.wstrb = req.wstrb /\ s'.valid = req.valid
+    /\ s'.wstrb = req.wstrb /\ s'.valid = req.valid /\ s'.error = rsp.error
 Proof
   qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
   >> qpat_abbrev_tac `cstep = procs (_ ++ [i2c_reg_top_comb_2])`
   >> `?s'. mk_circuit sstep cstep (i2c_circuit_init fbits) fext n = cstep (fext n) s' s'` by irule mk_circuit_cstep
   >> simp [mk_module_def]
   >> unabbrev_all_tac
-  >> simp [procs_append, procs_def, i2c_reg_top_comb_2_flat]
+  >> simp [procs_append, procs_def, i2c_reg_top_comb_2_flat, reg_rsp_decode_def, word_bit_bit_field_insert]
+  >> simp [word_bit_def, FCP_APPLY_UPDATE_THM_2]
   >> simp [procs_unchanged, i2c_reg_top_comb_1_flat]
 QED
 
-Theorem i2c_req_fext = SRULE [SF boolSimps.LET_ss] i2c_req_fext_inner;
+Theorem i2c_parsed_signals = SRULE [SF boolSimps.LET_ss] i2c_parsed_signals_inner;
 
 Theorem i2c_reg_top_i2c_state_rel_step_inner:
   let
@@ -315,7 +327,7 @@ Theorem i2c_reg_top_i2c_state_rel_step_inner:
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid)
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error)
   (* Not strictly a requirement, but makes this easier to state (we don't have to
    * add an i2c_reg_top_ff into the i2c_hw_write_rel condition).
    *
@@ -354,7 +366,7 @@ Proof
   >> rpt strip_tac
 
   >> drule_all_then strip_assume_tac i2c_reg_top_rsp_correct
-  >> drule_then assume_tac i2c_req_fext
+  >> drule_then assume_tac i2c_parsed_signals
   >> drule_then assume_tac i2c_reg_top_rsp_ready_error
 
   >> qabbrev_tac `req_c = reg_req_decode (fext n).reg_req_i: 7 reg_req`
@@ -391,6 +403,8 @@ Proof
           >> gs [i2c_state_rel_def, i2c_tick_hwro_unchanged, i2c_hw_write_rel_def])
       >- (fs [cheshire_req_rel_write]
           >> drule i2c_write_st_upd_alt
+          (* TODO: I think the reason this doesn't work for SPI might be that 
+           * procs_unchanged isn't applying properly or something? *)
           >> simp [i2c_reg_top_ff_flat, procs_unchanged]
           >> fs [i2c_state_rel_def, i2c_tick_hwro_unchanged, i2c_hw_write_rel_def, reg_rsp_decode_def, w2n_eq_iff_eq_n2w]))
   (* buffered_notif *)
@@ -505,7 +519,7 @@ Theorem i2c_reg_top_correct:
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid)
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error)
   /\ (!proc fext s s'. MEM proc ffs1 ==> (proc fext s s').hw2reg = s'.hw2reg)
   /\ (!st req_m fext fbits n st_upd notif rdata.
     let

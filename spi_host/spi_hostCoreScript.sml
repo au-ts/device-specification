@@ -480,6 +480,15 @@ Definition spi_host_tick_def:
       |>
 End
 
+(* Stubs *)
+Definition spi_host_txdata_read_def:
+  spi_host_txdata_read (st: spi_host_state) (nb: num) (offset: num) = 0w: word32
+End
+
+Definition spi_host_rxdata_read_def:
+  spi_host_rxdata_read (st: spi_host_state) (nb: num) (offset: num) = 0w: word32
+End
+
 Theorem spi_host_tick_buffered_notif_NONE:
   (spi_host_tick notif st).buffered_notif = NONE
 Proof

@@ -6,7 +6,7 @@
 import re
 import sys
 
-from .common import ip, name, regs
+from .common import ip, name, regs, windows
 
 with open(sys.argv[2]) as f:
     input = f.read()
@@ -22,7 +22,18 @@ input = re.sub(
     rf"(reg2hw|hw2reg)_({flat_reg_re})_({field_re})_(d|de|q|qe|re)", r"\1.\2.\4", input
 )
 
-input = re.sub(r"logic.*(reg2hw|hw2reg).*;\n", "", input)
+for i, window in enumerate(windows):
+    input = re.sub(rf"reg_req_win_{name(window)}", f"reg_req_win_o[{i}]", input)
+    input = re.sub(rf"reg_rsp_win_{name(window)}", f"reg_rsp_win_i[{i}]", input)
+
+input = re.sub(r"logic.*(reg2hw|hw2reg|reg_req_win|reg_rsp_win).*;\n", "", input)
+
+if len(windows) > 0:
+    window_ports = f"""
+  output logic[85:0][{len(windows) - 1}:0] reg_req_win_o,
+  output logic[33:0][{len(windows) - 1}:0] reg_rsp_win_i,"""
+else:
+    window_ports = ""
 
 input = re.sub(
     rf"module {ip.name}_circuit\([^)]*\)",
@@ -30,9 +41,9 @@ input = re.sub(
   input logic clk_i,
   input logic rst_ni,
   input logic[85:0] reg_req_i,
-  output logic[33:0] reg_rsp_o,
-  output i2c_reg_pkg::i2c_reg2hw_t reg2hw,
-  input i2c_reg_pkg::i2c_hw2reg_t hw2reg
+  output logic[33:0] reg_rsp_o,{window_ports}
+  output {ip.name}_reg_pkg::{ip.name}_reg2hw_t reg2hw,
+  input {ip.name}_reg_pkg::{ip.name}_hw2reg_t hw2reg
 )""",
     input,
 )

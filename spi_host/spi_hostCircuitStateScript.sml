@@ -40,6 +40,10 @@ Datatype:
      * same as the ones in real hardware). *)
     reg2hw: spi_host_reg2hw;
     hw2reg: spi_host_hw2reg;
+    reg_req_win_rxdata: 48 reg_req;
+    reg_req_win_txdata: 48 reg_req;
+    reg_rsp_win_rxdata: reg_rsp;
+    reg_rsp_win_txdata: reg_rsp;
 
     (* The decoded fields of `reg_req_i`. *)
     addr: word6;
@@ -47,6 +51,8 @@ Datatype:
     wdata: word32;
     wstrb: word4;
     valid: bool;
+    (* `reg_rsp_o.error`, if it's being determined by us and not by a window. *)
+    error: bool;
   |>
 End
 

@@ -57,6 +57,8 @@ Datatype:
     wdata: word32;
     wstrb: word4;
     valid: bool;
+    (* `reg_rsp_o.error`, if it's being determined by us and not by a window. *)
+    error: bool;
   |>
 End
 

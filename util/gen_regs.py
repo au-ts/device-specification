@@ -1,8 +1,9 @@
 import sys
 
 from reggen.register import Register
+from reggen.window import Window
 
-from .common import ip, name, regs
+from .common import entries, ip, name, regs
 
 
 def reg_record(reg: Register):
@@ -52,39 +53,49 @@ Definition {ip.name}_{name(reg)}_decode_write_def:
 End"""
 
 
-if any(
-    reg.hwext and (field.hwqe or field.hwre) for reg in regs for field in reg.fields
-):
-    cases = []
-    if any(reg.hwext and field.hwre for reg in regs for field in reg.fields):
-        hwext_read_notif_decl = f"""\
+cases = []
+read_cases = []
+write_cases = []
+
+for entry in entries:
+    if isinstance(entry, Window):
+        read_cases.append(f"{name(entry)}_read num num")
+    elif entry.hwext and any(field.hwre for field in entry.fields):
+        read_cases.append(f"{name(entry)}_read")
+
+    if isinstance(entry, Window):
+        write_cases.append(f"{name(entry)}_write num num word32")
+    elif entry.hwext and any(field.hwqe for field in entry.fields):
+        write_cases.append(f"{name(entry)}_write {ip.name}_{name(entry)}_update")
+
+if len(read_cases) > 0:
+    hwext_read_notif_decl = f"""\
 Datatype:
-  {ip.name}_hwext_read_notif = {" | ".join(f"{(name(reg))}_read" for reg in regs if any(field.hwre for field in reg.fields))}
+  {ip.name}_hwext_read_notif = {" | ".join(read_cases)}
 End
 
 """
-        cases.append(f"Read {ip.name}_hwext_read_notif")
-    else:
-        hwext_read_notif_decl = ""
+    cases.append(f"Read {ip.name}_hwext_read_notif")
+else:
+    hwext_read_notif_decl = ""
 
-    if any(reg.hwext and field.hwqe for reg in regs for field in reg.fields):
-        hwext_write_notif_decl = f"""\
+if len(write_cases) > 0:
+    hwext_write_notif_decl = f"""\
 Datatype:
-  {ip.name}_hwext_write_notif = {" | ".join(f"{(name(reg))}_write {ip.name}_{name(reg)}_update" for reg in regs if any(field.hwqe for field in reg.fields) and reg.hwext)}
+  {ip.name}_hwext_write_notif = {" | ".join(write_cases)}
 End
 
 """
-        cases.append(f"Write {ip.name}_hwext_write_notif")
-    else:
-        hwext_write_notif_decl = ""
+    cases.append(f"Write {ip.name}_hwext_write_notif")
+else:
+    hwext_write_notif_decl = ""
 
+if len(cases) > 0:
     hwext_notif_decl = f"""\
 Datatype:
   {ip.name}_hwext_notif = {" | ".join(cases)}
 End"""
 else:
-    hwext_read_notif_decl = ""
-    hwext_write_notif_decl = ""
     hwext_notif_decl = "Type {ip.name}_hwext_notif = ``:unit``"
 
 
@@ -96,7 +107,7 @@ End"""
 else:
     notif_decl = f"Type {ip.name}_notif = ``:unit``"
 
-regs = f"""\
+output = f"""\
 open HolKernel Parse boolLib bossLib;
 open wordsTheory;
 
@@ -121,4 +132,4 @@ val _ = export_theory();
 """
 
 with open(sys.argv[2], "w") as f:
-    f.write(regs)
+    f.write(output)
