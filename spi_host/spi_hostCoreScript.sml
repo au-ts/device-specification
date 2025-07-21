@@ -422,7 +422,7 @@ Definition spi_host_tick_def:
       access_valid: bool = F; (* Need to get stuff from win reg *)
       error_access_inval = (tx_valid ∧ ¬access_valid);
       command_busy = (LENGTH st.commands < 64);
-      error_csid_inval = (command_valid_i ∧ command_busy ∧ ¬(regs.csid.csid < 1w));
+      error_csid_inval = (command_valid_i ∧ command_busy ∧ ¬(st.regs.csid.csid < 1w));
       error_cmd_inval:bool  = (command_valid_i ∧ command_busy 
                           ∧ ¬((command_i.speed = 0w) ∨ ((command_i.speed < 3w) ∧ ¬(command_i.wr_en = command_i.rd_en))));
 
@@ -448,7 +448,7 @@ Definition spi_host_tick_def:
       <|
         fnums := fnums';
         buffered_notif := NONE;
-        regs := st.regs;
+        regs := regs';
         clock_counter := clock_counter';
         counter := counter';
         fsm_state := fsm_state';
