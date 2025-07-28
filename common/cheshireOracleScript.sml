@@ -1,5 +1,6 @@
 open HolKernel Parse boolLib bossLib;
 open BasicProvers;
+open sumExtraTheory;
 open sharedMemoryOracleTheory;
 
 val _ = new_theory "cheshireOracle";
@@ -11,47 +12,43 @@ Definition cheshire_wait_def:
   let
     (st', ticks) = eat_fnum st
   in
-    FUNPOW (tick NONE) ticks st'
+    sum_funpowM (tick NONE) ticks st'
 End
 
 Definition cheshire_oracle_read_def:
   cheshire_oracle_read
     (eat_fnum: 'ffi -> 'ffi # num)
-    (tick: 'notif option -> 'ffi -> 'ffi)
+    (tick: 'notif option -> 'ffi -> ffi_outcome + 'ffi)
     (read: 'ffi -> num -> num -> ffi_outcome + 'notif option # word32)
     (st: 'ffi) (nb: num) (addr: num) =
-  let
-    st' = cheshire_wait eat_fnum tick st;
-  in
-    if nb > 4 then
-      INL FFI_failed
-    else
-      case read st' nb addr of
-        INL outcome => INL outcome
-      | INR (notif, value) => INR (tick notif st', w2n value)
+  do
+    sum_check (nb > 4) FFI_failed;
+    st <- cheshire_wait eat_fnum tick st;
+    (notif, value) <- read st nb addr;
+    st <- tick notif st;
+    INR (st, w2n value)
+  od
 End
 
 Definition cheshire_oracle_write_def:
   cheshire_oracle_write
     (eat_fnum: 'ffi -> 'ffi # num)
-    (tick: 'notif option -> 'ffi -> 'ffi)
+    (tick: 'notif option -> 'ffi -> ffi_outcome + 'ffi)
     (write: 'ffi -> num -> num -> word32 -> ffi_outcome + ('ffi -> 'ffi) # 'notif option)
     (st: 'ffi) (nb: num) (addr: num) (value: num) =
-  let
-    st' = cheshire_wait eat_fnum tick st;
-  in
-    if nb > 4 then
-      INL FFI_failed
-    else
-      case write st' nb addr (n2w value) of
-        INL outcome => INL outcome
-      | INR (st_upd, notif) => INR (st_upd (tick notif st'))
+  do
+    sum_check (nb > 4) FFI_failed;
+    st <- cheshire_wait eat_fnum tick st;
+    (st_upd, notif) <- write st nb addr (n2w value);
+    st <- tick notif st;
+    INR (st_upd st)
+  od
 End
 
 Definition cheshire_oracle_def:
   cheshire_oracle (:'a)
     (eat_fnum: 'ffi -> 'ffi # num)
-    (tick: 'notif option -> 'ffi -> 'ffi)
+    (tick: 'notif option -> 'ffi -> ffi_outcome + 'ffi)
     (read: 'ffi -> num -> num -> ffi_outcome + 'notif option # word32)
     (write: 'ffi -> num -> num -> word32 -> ffi_outcome + ('ffi -> 'ffi) # 'notif option) =
   sh_mem_oracle (:'a)
@@ -100,11 +97,12 @@ QED
 
 Definition cheshire_run_def:
   (cheshire_run tick_fn read_fn write_fn st [] = INR (st, [])) /\
-  (cheshire_run tick_fn read_fn write_fn st (req::reqs) =
-    case cheshire_req read_fn write_fn st req of
-      INL x => INL x
-    | INR (st_upd, notif, rdata) => SUM_MAP I (I ## (CONS rdata))
-        (cheshire_run tick_fn read_fn write_fn (st_upd (tick_fn notif st)) reqs))
+  (cheshire_run tick_fn read_fn write_fn st (req::reqs) = do
+    (st_upd, notif, rdata) <- cheshire_req read_fn write_fn st req;
+    st <- tick_fn notif st;
+    (st, rdatas) <- cheshire_run tick_fn read_fn write_fn (st_upd st) reqs;
+    INR (st, rdata::rdatas)
+  od)
 End
 
 Theorem ISR_SUM_MAP:
@@ -114,7 +112,9 @@ Proof
 QED
 
 Theorem cheshire_run_cheshire_req_ISR:
-  (!st req. MEM req reqs ==> ISR (cheshire_req read_fn write_fn st req)) ==>
+  (!st req. MEM req reqs ==> ?st_upd notif rdata.
+    cheshire_req read_fn write_fn st req = INR (st_upd, notif, rdata) /\
+    ISR (tick_fn notif st)) ==>
   ISR (cheshire_run tick_fn read_fn write_fn st reqs)
 Proof
   qid_spec_tac `st`
@@ -122,34 +122,91 @@ Proof
   >- simp [cheshire_run_def]
   >- (simp [cheshire_run_def]
       >> rpt strip_tac
-      >> `?oracle_res. cheshire_req read_fn write_fn st h = INR oracle_res` by simp [GSYM sumExtraTheory.ISR_exists]
-      >> PairCases_on `oracle_res`
-      >> simp [ISR_SUM_MAP])
+      >> first_assum (qspecl_then [`st`, `h`] assume_tac)
+      >> fs [sum_bind_def, ISR_exists]
+      >> last_x_assum (qspec_then `st_upd x'` strip_assume_tac)
+      >> simp [sum_bind_def]
+      >> PairCases_on `x''`
+      >> simp [])
+QED
+
+Theorem sum_bind_assoc:
+  sum_bind (sum_bind x f) g = sum_bind x (\y. sum_bind (f y) g)
+Proof
+  Cases_on `x` >> simp [sum_bind_def]
+QED
+
+(*
+We want to normalise this:
+
+do
+  a <- do
+    (b, c) <- d;
+    e b c
+  od;
+  f a
+od
+
+into:
+
+do
+  (b, c) <- d
+  a <- e b c
+  f a
+od
+
+However, plain `sum_bind_assoc` gets stuck here:
+
+do
+  y <- d;
+  a <- (λ(b,c). e b c) y;
+  f a
+od
+
+We should be able to use ETA_THM; but internally, it looks like this:
+
+sum_bind d (\y. do
+  a <- (λ(b,c). e b c) y;
+  f a
+od)
+
+This theorem converts that into this:
+
+sum_bind d (\y. (λ(b,c) do
+  a <- e b c;
+  f a
+od) y)
+
+at which point ETA_THM can be applied.
+*)
+Theorem sum_bind_uncurry:
+  sum_bind (UNCURRY f x) g = UNCURRY (\a b. sum_bind (f a b) g) x
+Proof
+  pairarg_tac >> simp []
 QED
 
 Theorem cheshire_run_SNOC:
   cheshire_run tick_fn read_fn write_fn st (SNOC req reqs) =
-  case cheshire_run tick_fn read_fn write_fn st reqs of
-    INL x => INL x
-  | INR (st', rdatas) =>
-    case cheshire_req read_fn write_fn st' req of
-      INL x => INL x
-    | INR (st_upd, notif, rdata) => INR (st_upd (tick_fn notif st'), SNOC rdata rdatas)
+  do
+    (st, rdatas) <- cheshire_run tick_fn read_fn write_fn st reqs;
+    (st_upd, notif, rdata) <- cheshire_req read_fn write_fn st req;
+    st <- tick_fn notif st;
+    INR (st_upd st, SNOC rdata rdatas)
+  od
 Proof
   qid_spec_tac `st`
   >> Induct_on `reqs`
-  >- simp [cheshire_run_def]
-  >- (simp [cheshire_run_def]
-      >> rpt strip_tac
-      >> Cases_on `cheshire_req read_fn write_fn st h`
-      >- simp []
-      >- (PairCases_on `y`
-          >> Cases_on `cheshire_run tick_fn read_fn write_fn (y0 (tick_fn y1 st)) reqs`
-          >- simp []
-          >- (PairCases_on `y`
-              >> Cases_on `cheshire_req read_fn write_fn y0' req`
-              >- simp []
-              >- (PairCases_on `y` >> simp []))))
+  >- simp [cheshire_run_def, sum_bind_def]
+  >- (simp [cheshire_run_def, sum_bind_assoc, sum_bind_uncurry]
+      (* For some reason this doesn't work with `simp`. *)
+      >> pure_rewrite_tac [ETA_THM]
+      >> simp [sum_bind_def])
+QED
+
+Theorem sum_bind_INR:
+  sum_bind x f = INR z ==> ?y. x = INR y /\ f y = INR z
+Proof
+  Cases_on `x` >> simp [sum_bind_def]
 QED
 
 Theorem cheshire_run_LENGTH_rdatas:
@@ -163,17 +220,18 @@ Proof
   >- simp [cheshire_run_def]
   >- (simp [cheshire_run_def]
       >> rpt strip_tac
-      >> Cases_on `cheshire_req read_fn write_fn st h`
-      >- fs []
-      >- (PairCases_on `y`
-          >> Cases_on `cheshire_run tick_fn read_fn write_fn (y0 (tick_fn y1 st)) reqs`
-          >- fs []
-          >- (PairCases_on `y`
-              >> fs []
-              >> qpat_x_assum `_ = rdatas` (assume_tac o GSYM)
-              >> simp []
-              >> last_x_assum $ drule_then assume_tac
-              >> simp [])))
+      >> dxrule_then strip_assume_tac sum_bind_INR
+      >> pairarg_tac
+      >> fs []
+      >> dxrule_then strip_assume_tac sum_bind_INR
+      >> fs []
+      >> dxrule_then strip_assume_tac sum_bind_INR
+      >> pairarg_tac
+      >> fs []
+      >> qpat_x_assum `_::_ = _` (assume_tac o GSYM)
+      >> simp []
+      >> last_x_assum (qspecl_then [`rdatas'`, `st'`, `st_upd y'`] assume_tac)
+      >> simp [])
 QED
 
 val _ = export_theory ();

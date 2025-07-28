@@ -253,10 +253,12 @@ End
 (* This probably shouldn't go here but I don't want to create a whole new file
  * just for this. *)
 Theorem {ip.name}_tick_hwro_unchanged:
-  {" /\\\n  ".join(f"({ip.name}_tick notif st).regs.{name(reg)}.{name(field)} = st.regs.{name(reg)}.{name(field)}" for reg in regs for field in reg.fields if not reg.hwext and not field.hwaccess.allows_write())}
+  {ip.name}_tick notif st = INR st' ==>
+  {" /\\\n  ".join(f"st'.regs.{name(reg)}.{name(field)} = st.regs.{name(reg)}.{name(field)}" for reg in regs for field in reg.fields if not reg.hwext and not field.hwaccess.allows_write())}
 Proof
   simp [{ip.name}_tick_def]
-  >> rpt strip_tac
+  >> disch_then (assume_tac o GSYM)
+  >> simp []
   >> rpt IF_CASES_TAC
   >> simp []
 QED

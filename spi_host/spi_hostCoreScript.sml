@@ -445,7 +445,7 @@ Definition spi_host_tick_def:
 
       fnums' = λn. fnums (n + 2);
     in
-      <|
+      INR <|
         fnums := fnums';
         buffered_notif := NONE;
         regs := regs';
@@ -490,14 +490,17 @@ Definition spi_host_rxdata_read_def:
 End
 
 Theorem spi_host_tick_buffered_notif_NONE:
-  (spi_host_tick notif st).buffered_notif = NONE
+  spi_host_tick notif st = INR st' ==> st'.buffered_notif = NONE
 Proof
   simp [spi_host_tick_def]
+  >> disch_then (assume_tac o GSYM)
+  >> simp []
 QED
 
 Theorem spi_host_tick_unused_fnums:
   ?n. !fnums. (!i. i < n ==> fnums i = st.fnums i) ==>
-  spi_host_tick notif (st with fnums := fnums) = spi_host_tick notif st with fnums := (\i. fnums (i + n))
+  spi_host_tick notif (st with fnums := fnums) =
+  SUM_MAP I (\st'. st' with fnums := (\i. fnums (i + n))) (spi_host_tick notif st)
 Proof
   qexists `2`
   >> simp [spi_host_tick_def, SF ETA_ss]

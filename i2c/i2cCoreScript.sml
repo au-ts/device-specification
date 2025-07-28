@@ -432,7 +432,7 @@ Definition i2c_tick_def:
 
       fnums' = λn. fnums (n + 2);
     in
-      <|
+      INR <|
         fnums := fnums';
         buffered_notif := NONE;
         rx_fifo := rx_fifo'';
@@ -454,14 +454,17 @@ Definition i2c_tick_def:
 End
 
 Theorem i2c_tick_buffered_notif_NONE:
-  (i2c_tick notif st).buffered_notif = NONE
+  i2c_tick notif st = INR st' ==> st'.buffered_notif = NONE
 Proof
   simp [i2c_tick_def]
+  >> disch_then (assume_tac o GSYM)
+  >> simp []
 QED
 
 Theorem i2c_tick_unused_fnums:
   ?n. !fnums. (!i. i < n ==> fnums i = st.fnums i) ==>
-  i2c_tick notif (st with fnums := fnums) = i2c_tick notif st with fnums := (\i. fnums (i + n))
+  i2c_tick notif (st with fnums := fnums) =
+  SUM_MAP I (\st'. st' with fnums := (\i. fnums (i + n))) (i2c_tick notif st)
 Proof
   qexists `2`
   >> simp [i2c_tick_def, SF ETA_ss]
