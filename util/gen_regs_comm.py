@@ -256,9 +256,10 @@ Theorem {ip.name}_tick_hwro_unchanged:
   {ip.name}_tick notif st = INR st' ==>
   {" /\\\n  ".join(f"st'.regs.{name(reg)}.{name(field)} = st.regs.{name(reg)}.{name(field)}" for reg in regs for field in reg.fields if not reg.hwext and not field.hwaccess.allows_write())}
 Proof
-  simp [{ip.name}_tick_def]
+  pure_rewrite_tac [{ip.name}_tick_def]
   >> disch_then (assume_tac o GSYM)
-  >> simp []
+  >> fs []
+  >> rpt (pairarg_tac >> fs [])
   >> rpt IF_CASES_TAC
   >> simp []
 QED
