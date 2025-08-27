@@ -111,25 +111,6 @@ Proof
   Cases_on `z` >> simp []
 QED
 
-Theorem cheshire_run_cheshire_req_ISR:
-  (!st req. MEM req reqs ==> ?st_upd notif rdata.
-    cheshire_req read_fn write_fn st req = INR (st_upd, notif, rdata) /\
-    ISR (tick_fn notif st)) ==>
-  ISR (cheshire_run tick_fn read_fn write_fn st reqs)
-Proof
-  qid_spec_tac `st`
-  >> Induct_on `reqs`
-  >- simp [cheshire_run_def]
-  >- (simp [cheshire_run_def]
-      >> rpt strip_tac
-      >> first_assum (qspecl_then [`st`, `h`] assume_tac)
-      >> fs [sum_bind_def, ISR_exists]
-      >> last_x_assum (qspec_then `st_upd x'` strip_assume_tac)
-      >> simp [sum_bind_def]
-      >> PairCases_on `x''`
-      >> simp [])
-QED
-
 Theorem sum_bind_assoc:
   sum_bind (sum_bind x f) g = sum_bind x (\y. sum_bind (f y) g)
 Proof
@@ -203,8 +184,51 @@ Proof
       >> simp [sum_bind_def])
 QED
 
+Theorem sum_bind_ISR:
+  ISR (sum_bind x f) <=> ?y. x = INR y /\ ISR (f y)
+Proof
+  Cases_on `x` >> simp [sum_bind_def]
+QED
+
+Theorem cheshire_run_ISR_SNOC:
+  ISR (cheshire_run tick_fn read_fn write_fn st (SNOC req reqs)) <=>
+  ?st' rdatas st_upd notif rdata.
+  cheshire_run tick_fn read_fn write_fn st reqs = INR (st', rdatas) /\
+  cheshire_req read_fn write_fn st' req = INR (st_upd, notif, rdata) /\
+  ISR (tick_fn notif st')
+Proof
+  iff_tac
+  >- (rpt strip_tac
+      >> fs [cheshire_run_SNOC, sum_bind_ISR]
+      >> pairarg_tac
+      >> fs [sum_bind_ISR]
+      >> pairarg_tac
+      >> fs [sum_bind_ISR])
+  >- (rpt strip_tac
+      >> simp [cheshire_run_SNOC, sum_bind_def, sum_bind_ISR, GSYM ISR_exists])
+QED
+
+Theorem cheshire_run_INR_CONS:
+  cheshire_run tick_fn read_fn write_fn st (req::reqs) = INR (st', rdatas) <=>
+  ?rdata rdatas' st_upd notif st''.
+  rdatas = rdata::rdatas' /\
+  cheshire_req read_fn write_fn st req = INR (st_upd, notif, rdata) /\
+  tick_fn notif st = INR st'' /\
+  cheshire_run tick_fn read_fn write_fn (st_upd st'') reqs = INR (st', rdatas')
+Proof
+  iff_tac
+  >- (rpt strip_tac
+      >> fs [cheshire_run_def, sum_bind_INR]
+      >> pairarg_tac
+      >> gvs [sum_bind_INR]
+      >> pairarg_tac
+      >> gvs [])
+  >- (rpt strip_tac
+      >> simp [cheshire_run_def, sum_bind_def])
+QED
+
 Theorem sum_bind_INR:
-  sum_bind x f = INR z ==> ?y. x = INR y /\ f y = INR z
+  sum_bind x f = INR z <=> ?y. x = INR y /\ f y = INR z
 Proof
   Cases_on `x` >> simp [sum_bind_def]
 QED
@@ -220,17 +244,12 @@ Proof
   >- simp [cheshire_run_def]
   >- (simp [cheshire_run_def]
       >> rpt strip_tac
-      >> dxrule_then strip_assume_tac sum_bind_INR
+      >> fs [sum_bind_INR]
       >> pairarg_tac
-      >> fs []
-      >> dxrule_then strip_assume_tac sum_bind_INR
-      >> fs []
-      >> dxrule_then strip_assume_tac sum_bind_INR
+      >> fs [sum_bind_INR]
       >> pairarg_tac
-      >> fs []
-      >> qpat_x_assum `_::_ = _` (assume_tac o GSYM)
-      >> simp []
-      >> last_x_assum (qspecl_then [`rdatas'`, `st'`, `st_upd y'`] assume_tac)
+      >> gvs []
+      >> last_x_assum (qspecl_then [`rdatas'`, `st'`, `st_upd st''`] assume_tac)
       >> simp [])
 QED
 

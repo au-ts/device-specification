@@ -1,4 +1,5 @@
 open HolKernel Parse boolLib bossLib;
+open ffiTheory;
 open spi_hostRegsTheory;
 open BasicProvers;
 
@@ -174,7 +175,7 @@ End
  * For regular registers, this occurs on the clock cycle after the I/O actually
  * occurs, but for `hwext` registers it occurs on the same clock cycle. *)
 Definition spi_host_tick_def:
-  spi_host_tick (hwext_notif: spi_host_hwext_notif option) (st: spi_host_state) =
+  spi_host_tick (hwext_notif: spi_host_hwext_notif option) (st: spi_host_state): ffi_outcome + spi_host_state =
     let
       fnums = st.fnums;
       command_valid_i: bool = (LENGTH st.commands > 0);

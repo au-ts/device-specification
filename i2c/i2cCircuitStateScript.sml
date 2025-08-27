@@ -50,6 +50,7 @@ Datatype:
      * same as the ones in real hardware). *)
     reg2hw: i2c_reg2hw;
     hw2reg: i2c_hw2reg;
+    win_buses: i2c_win_buses;
 
     (* The decoded fields of `reg_req_i`. *)
     addr: word7;

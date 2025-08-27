@@ -6,7 +6,7 @@ from math import ceil
 from reggen.field import Field
 from reggen.register import Register
 
-from .common import addr_width, ip, name, regs
+from .common import addr_width, ip, name, regs, windows
 
 
 def field_reg2hw_fields(field: Field):
@@ -92,6 +92,22 @@ def hw2reg_def():
     return f"""\
 Datatype:
   {ip.name}_hw2reg = <|
+    {"\n    ".join(decls)}
+  |>
+End"""
+
+
+def win_buses_def():
+    if len(windows) == 0:
+        return f"Type {ip.name}_win_buses = ``:unit``;"
+    else:
+        decls = []
+        for window in windows:
+            decls.append(f"reg_req_win_{name(window)}: 48 reg_req;")
+            decls.append(f"reg_rsp_win_{name(window)}: reg_rsp;")
+        return f"""\
+Datatype:
+  {ip.name}_win_buses = <|
     {"\n    ".join(decls)}
   |>
 End"""
@@ -198,6 +214,16 @@ def hwext_read_rel_exp():
         return "T"
 
 
+def win_error_exp():
+    if len(windows) == 0:
+        return "F"
+    else:
+        return " \\/\n  ".join(
+            rf"buses.reg_req_win_{name(window)}.valid /\ buses.reg_rsp_win_{name(window)}.ready /\ buses.reg_rsp_win_{name(window)}.error"
+            for window in windows
+        )
+
+
 regs_comm = f"""\
 open HolKernel Parse boolLib bossLib;
 open wordsTheory;
@@ -213,6 +239,8 @@ val _ = new_theory "{ip.name}RegsComm";
 {"\n\n".join(reg_hw2reg_def(reg) for reg in regs if reg_needs_hw2reg(reg))}
 
 {hw2reg_def()}
+
+{win_buses_def()}
 
 Definition {ip.name}_notif_rel_def:
   {ip.name}_notif_rel (notif: {ip.name}_notif option) (reg2hw: {ip.name}_reg2hw) <=>
@@ -248,6 +276,11 @@ Definition {ip.name}_hw_write_rel_def:
   (* hw2reg is from the same clock cycle as `regs`, not `regs'`. *)
   {ip.name}_hw_write_rel (regs: {ip.name}_regs) (regs': {ip.name}_regs) (hw2reg: {ip.name}_hw2reg) <=>
   {hw_write_rel_exp()}
+End
+
+Definition {ip.name}_win_error_def:
+  {ip.name}_win_error (buses: {ip.name}_win_buses) <=>
+  {win_error_exp()}
 End
 
 (* This probably shouldn't go here but I don't want to create a whole new file

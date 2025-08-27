@@ -1,4 +1,5 @@
 open HolKernel Parse boolLib bossLib;
+open ffiTheory;
 open i2cRegsTheory;
 
 val _ = new_theory("i2cCore");
@@ -196,7 +197,8 @@ End
  * For regular registers, this occurs on the clock cycle after the I/O actually
  * occurs, but for `hwext` registers it occurs on the same clock cycle. *)
 Definition i2c_tick_def:
-  i2c_tick (hwext_notif: i2c_hwext_notif option) (st: i2c_state) =
+  i2c_tick (hwext_notif: i2c_hwext_notif option) (st: i2c_state): ffi_outcome + i2c_state =
+    if st.regs.ctrl.enabletarget = 1w then INL FFI_failed else
     let
       fnums = st.fnums;
       fmt_fifo' = if st.buffered_notif = SOME fdata_write ∧ LENGTH st.fmt_fifo < 64
@@ -461,25 +463,20 @@ Proof
   >> simp []
 QED
 
+Theorem i2c_tick_ISR_fnums:
+  ISR (i2c_tick notif (st with fnums := fnums)) = ISR (i2c_tick notif st)
+Proof
+  Cases_on `st.regs.ctrl.enabletarget = 1w` >> simp [i2c_tick_def]
+QED
+
 Theorem i2c_tick_unused_fnums:
   ?n. !fnums. (!i. i < n ==> fnums i = st.fnums i) ==>
   i2c_tick notif (st with fnums := fnums) =
   SUM_MAP I (\st'. st' with fnums := (\i. fnums (i + n))) (i2c_tick notif st)
 Proof
   qexists `2`
+  >> Cases_on `st.regs.ctrl.enabletarget = 1w`
   >> simp [i2c_tick_def, SF ETA_ss]
-QED
-
-Theorem unused_fnums_ignored_fnums_val:
-  (!fnums. (!i. i < n ==> fnums i = st.fnums i)
-    ==> f (st with fnums := fnums) = f st with fnums := (\i. fnums (i + n)))
-  ==> (f st).fnums = (\i. st.fnums (i + n))
-Proof
-  rpt strip_tac
-  >> first_x_assum $ qspec_then `st.fnums` assume_tac
-  >> `st with fnums := st.fnums = st` by simp [theorem "i2c_state_component_equality"]
-  >> fs []
-  >> last_x_assum (fn thm => simp [Once thm])
 QED
 
 val _ = export_theory();

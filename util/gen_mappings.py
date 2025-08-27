@@ -1,3 +1,6 @@
+# TODO: maybe remove the unused nb argument from read and the unused st argument
+# from write?
+
 import sys
 from math import ceil
 
