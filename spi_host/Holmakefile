@@ -46,7 +46,8 @@ spi_host_reg_top.v: spi_host_reg_top_wrapper.sv
 	sv2v \
 	    $(CHESHIRE_INC) \
 		$(OPENTITAN_PERIPHERALS)/src/spi_host/rtl/spi_host_reg_*.sv \
-		$(REGISTER_INTERFACE)/{src/reg_intf.sv,vendor/lowrisc_opentitan/src/*.sv} \
+		$(REGISTER_INTERFACE)/src/reg_intf.sv \
+		$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/src/*.sv \
 		spi_host_reg_top_wrapper.sv \
 		--write=spi_host_reg_top.v --top=spi_host_reg_top_wrapper
 
