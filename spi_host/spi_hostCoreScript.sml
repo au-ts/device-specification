@@ -416,9 +416,9 @@ Definition spi_host_tick_def:
         data := tx_word;
         be := tx_be_w; 
       |>;
-      (*^For be: I don't actually know where this comes from the documentation doesn't even mention this exists *)
-      tx_ready_o: bool = (select_word_ready_o ∧ q_tx);
-      tx_data_fifo': tx_data list = if tx_ready_o then APPEND st.tx_data_fifo [tx_data_new] else st.tx_data_fifo;
+
+      tx_ready = (LENGTH st.tx_data_fifo < 72); 
+      (*This is max tx depth; ugly way of doing it with magic number but HOL4 does not like using the val *)
 
       rx_valid: bool = merge_word_valid_o;
       rx_data_new: 32 word = merge_word_o;
@@ -426,15 +426,16 @@ Definition spi_host_tick_def:
 
 	
       (* Errors *)
-      tx_valid: bool = F; (* Need to get stuff from win reg *)
-      access_valid: bool = T;
+      tx_valid: bool = q_tx;
+
+      access_valid: bool = ¬(tx_be = 7 ∨ tx_be = 14);
       error_access_inval: bool = (tx_valid ∧ ¬access_valid);
       command_busy: bool = (LENGTH st.commands < 64);
       error_csid_inval: bool = (command_valid_i ∧ command_busy ∧ ¬(st.regs.csid.csid < 1w));
       error_cmd_inval: bool  = (command_valid_i ∧ command_busy 
                           ∧ ¬((command_i.speed = 0w) ∨ ((command_i.speed < 3w) ∧ ¬(command_i.wr_en = command_i.rd_en))));
 
-      error_overflow: bool = (tx_valid ∧ ¬tx_ready_o);
+      error_overflow: bool = (tx_valid ∧ ¬tx_ready);
       (*rx_ready_i into core*)
       error_underflow: bool = (merge_word_ready_in ∧ ¬rx_valid);
       error_busy: bool = (command_valid_i ∧ ¬command_busy);
@@ -448,7 +449,10 @@ Definition spi_host_tick_def:
         accessinval := bool2word1(error_access_inval);
       |>;
 
-      
+      (* Adding to tx *)
+      tx_ready_o: bool = (select_word_ready_o ∧ tx_valid ∧ ¬error_overflow ∧ ¬error_access_inval); 
+      tx_data_fifo': tx_data list = if tx_ready_o then APPEND st.tx_data_fifo [tx_data_new] else st.tx_data_fifo;
+
       regs' = st.regs with <| error_status := error_stat |>;
 
       fnums' = λn. fnums (n + 2);
@@ -490,19 +494,19 @@ End
 
 (* Stubs *)
 Definition spi_host_txdata_read_def:
-  spi_host_txdata_read (st: spi_host_state) (nb: num) (offset: num) = 0w: word32
+  spi_host_txdata_read (st: spi_host_state) (nb: num) (offset: num) = (HD st.tx_data_fifo).data
 End
 
 Definition spi_host_rxdata_read_def:
-  spi_host_rxdata_read (st: spi_host_state) (nb: num) (offset: num) = 0w: word32
+  spi_host_rxdata_read (st: spi_host_state) (nb: num) (offset: num) = HD st.rx_data_fifo
 End
 
 Theorem spi_host_tick_buffered_notif_NONE:
   spi_host_tick notif st = INR st' ==> st'.buffered_notif = NONE
 Proof
-  pure_rewrite_tac [spi_host_tick_def] >>
-  LET_ELIM_TAC >>
-  simp []
+  pure_rewrite_tac [spi_host_tick_def]
+  >> LET_ELIM_TAC
+  >> gvs []
 QED
 
 Theorem spi_host_tick_unused_fnums:
@@ -510,10 +514,10 @@ Theorem spi_host_tick_unused_fnums:
   spi_host_tick notif (st with fnums := fnums) =
   SUM_MAP I (\st'. st' with fnums := (\i. fnums (i + n))) (spi_host_tick notif st)
 Proof
-  qexists `2` >> 
-  pure_rewrite_tac [spi_host_tick_def] >>
-  LET_ELIM_TAC >>
-  gvs [SF ETA_ss]
+  qexists `2`
+  >> pure_rewrite_tac [spi_host_tick_def]
+  >> LET_ELIM_TAC
+  >> gvs [SF ETA_ss]
 QED
 
 Theorem unused_fnums_ignored_fnums_val:
