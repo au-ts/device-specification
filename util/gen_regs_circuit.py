@@ -85,20 +85,32 @@ def reg_top_reg_qe_assns(reg: Register):
 
 
 def reg_top_window_reg_rsp_o_assn(window: Window):
-    return rf"""if {hex(window.offset)}w <= s'.addr /\ s'.addr < {hex(window.offset + window.size_in_bytes)}w then
+    return rf"""if {hex(window.offset)}w <=+ s'.addr /\ s'.addr <+ {hex(window.offset + window.size_in_bytes)}w then
     let
-      s' = s' with reg_rsp_o := bit_field_insert 33 2 s'.reg_rsp_win_{name(window)}.rdata s'.reg_rsp_o;
-      s' = s' with reg_rsp_o := (1 :+ s'.reg_rsp_win_{name(window)}.error) s'.reg_rsp_o;
-      s' = s' with reg_rsp_o := (0 :+ s'.reg_rsp_win_{name(window)}.ready) s'.reg_rsp_o;
+      s' = s' with reg_rsp_o := (0 :+ s'.win_buses.rsp.{name(window)}.ready) s'.reg_rsp_o;
+      s' = s' with reg_rsp_o := (1 :+ s'.win_buses.rsp.{name(window)}.error) s'.reg_rsp_o;
+      s' = s' with reg_rsp_o := bit_field_insert 33 2 s'.win_buses.rsp.{name(window)}.rdata s'.reg_rsp_o;
     in
       s'"""
 
 
 def reg_top_window_reg_req_win_assn(window: Window):
-    return rf"""if {hex(window.offset)}w <= s'.addr /\ s'.addr < {hex(window.offset + window.size_in_bytes)}w then
-      s' with reg_req_win_{name(window)} := reg_req_decode fext.reg_req_i
-    else
-      s' with reg_req_win_{name(window)} := reg_req_decode (0w: 86 word)"""
+    return rf"""if {hex(window.offset)}w <=+ s'.addr /\ s'.addr <+ {hex(window.offset + window.size_in_bytes)}w then let
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with addr := (reg_req_decode fext.reg_req_i: 48 reg_req).addr;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with write := (reg_req_decode fext.reg_req_i: 48 reg_req).write;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wdata := (reg_req_decode fext.reg_req_i: 48 reg_req).wdata;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wstrb := (reg_req_decode fext.reg_req_i: 48 reg_req).wstrb;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with valid := (reg_req_decode fext.reg_req_i: 48 reg_req).valid;
+    in
+      s'
+    else let
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with addr := (reg_req_decode (0w: 86 word): 48 reg_req).addr;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with write := (reg_req_decode (0w: 86 word): 48 reg_req).write;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wdata := (reg_req_decode (0w: 86 word): 48 reg_req).wdata;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wstrb := (reg_req_decode (0w: 86 word): 48 reg_req).wstrb;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with valid := (reg_req_decode (0w: 86 word): 48 reg_req).valid;
+    in
+      s'"""
 
 
 def reg_top_field_assn(reg: Register, field: Field):

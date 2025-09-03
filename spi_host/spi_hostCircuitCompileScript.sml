@@ -17,7 +17,7 @@ local
     "cio_sd_en_o",
 
     "intr_error_o",
-    "int_spi_event_o"
+    "intr_spi_event_o"
   ];
   val comms = spi_host_reg_comms @ [];
 in
