@@ -208,7 +208,7 @@ open {ip.name}CircuitStateTheory {ip.name}RegsTheory {ip.name}RegsCommTheory;
 
 (* The translator will only look for processes in the same theory as the
  * top-level `mk_module`, so we just export the bodies of these functions and
- * let `i2cCircuitTheory` make the actual definitions. *)
+ * let `{ip.name}CircuitTheory` make the actual definitions. *)
 val {ip.name}_reg_top_comb_1_tm = ``
   let
     s' = s' with addr := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).addr;
