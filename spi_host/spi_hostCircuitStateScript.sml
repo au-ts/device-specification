@@ -55,8 +55,19 @@ End
 
 Definition spi_host_core_state_rel_def:
   (* mstate = model state, cstate = circuit state *)
-  spi_host_core_state_rel (mstate: spi_host_state) (cstate: spi_host_circuit_state) =
-    spi_host_hwext_read_rel mstate cstate.hw2reg
+  spi_host_core_state_rel (mstate: spi_host_state) (cstate: spi_host_circuit_state) <=>
+    spi_host_hwext_read_rel mstate cstate.hw2reg /\
+    spi_host_win_read_rel mstate cstate.win_buses /\
+    (* We shouldn't really be assuming this: it's true for I2C and SPI, but in
+     * general it should be perfectly fine for an access to take more than 1 cycle
+     * to complete.
+     *
+     * Right now, though, the structure of our model assumes that an access will
+     * never take more than one cycle, and I don't want to deal with fixing that
+     * just yet; besides, much of the work of fixing this would go towards Cheshire-
+     * specific code, when I don't think it's likely that we're going to find a
+     * Cheshire peripheral which doesn't respond immediately. *)
+    spi_host_win_ready cstate.win_buses
 End
 
 Definition spi_host_state_rel_def:
@@ -70,7 +81,8 @@ Theorem spi_host_state_rel_fnums:
   spi_host_state_rel (st with fnums := fnums) = spi_host_state_rel st
 Proof
   irule EQ_EXT
-  >> simp [spi_host_state_rel_def, spi_host_notif_rel_def, spi_host_core_state_rel_def, spi_host_hwext_read_rel_def]
+  >> simp [spi_host_state_rel_def, spi_host_notif_rel_def, spi_host_core_state_rel_def, spi_host_hwext_read_rel_def, spi_host_win_read_rel_def]
+  >> simp [spi_host_rxdata_read_def, spi_host_txdata_read_def]
 QED
 
 val _ = export_theory ();

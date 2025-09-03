@@ -22,6 +22,7 @@ input = re.sub(
     rf"(reg2hw|hw2reg)_({flat_reg_re})_({field_re})_(d|de|q|qe|re)", r"\1.\2.\4", input
 )
 
+# TODO: this is outdated
 for i, window in enumerate(windows):
     input = re.sub(rf"reg_req_win_{name(window)}", f"reg_req_win_o[{i}]", input)
     input = re.sub(rf"reg_rsp_win_{name(window)}", f"reg_rsp_win_i[{i}]", input)

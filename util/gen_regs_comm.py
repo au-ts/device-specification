@@ -97,18 +97,26 @@ Datatype:
 End"""
 
 
-def win_buses_def():
+def win_buses_req_def():
     if len(windows) == 0:
-        return f"Type {ip.name}_win_buses = ``:unit``;"
+        return f"Type {ip.name}_win_buses_req = ``:unit``;"
     else:
-        decls = []
-        for window in windows:
-            decls.append(f"reg_req_win_{name(window)}: 48 reg_req;")
-            decls.append(f"reg_rsp_win_{name(window)}: reg_rsp;")
         return f"""\
 Datatype:
-  {ip.name}_win_buses = <|
-    {"\n    ".join(decls)}
+  {ip.name}_win_buses_req = <|
+    {"\n    ".join(f"{name(window)}: 48 reg_req;" for window in windows)}
+  |>
+End"""
+
+
+def win_buses_rsp_def():
+    if len(windows) == 0:
+        return f"Type {ip.name}_win_buses_rsp = ``:unit``;"
+    else:
+        return f"""\
+Datatype:
+  {ip.name}_win_buses_rsp = <|
+    {"\n    ".join(f"{name(window)}: reg_rsp;" for window in windows)}
   |>
 End"""
 
@@ -143,6 +151,16 @@ Proof
 QED"""
 
 
+def win_addr_exp():
+    if len(windows) == 0:
+        return "F"
+    else:
+        return " \\/\n  ".join(
+            rf"({hex(window.offset)} <= offset /\ offset < {hex(window.offset + window.size_in_bytes)})"
+            for window in windows
+        )
+
+
 def field_notif_rel(reg: Register, field: Field):
     return f"(reg2hw.{name(reg)}.{name(field)}_qe <=> notif = SOME {name(reg)}_write)"
 
@@ -151,11 +169,11 @@ def reg_hwext_notif_rels(reg: Register):
     result = []
     if reg.hwqe:
         result += [
-            rf"(!value. notif = SOME (Write ({name(reg)}_write value)) <=> req.addr = {hex(reg.offset)}w /\ req.valid /\ req.write /\ {ip.name}_{name(reg)}_decode_write req.wdata = value)"
+            rf"(!value. notif = SOME (Write ({name(reg)}_write value)) <=> req.addr = {hex(reg.offset)}w /\ req.valid /\ req.write /\ ~{ip.name}_req_error req /\ {ip.name}_{name(reg)}_decode_write req.wdata = value)"
         ]
     if reg.hwre:
         result += [
-            rf"(notif = SOME (Read {name(reg)}_read) <=> req.addr = {hex(reg.offset)}w /\ req.valid /\ ~req.write)"
+            rf"(notif = SOME (Read {name(reg)}_read) <=> req.addr = {hex(reg.offset)}w /\ req.valid /\ ~req.write /\ ~{ip.name}_req_error req)"
         ]
     return result
 
@@ -214,12 +232,59 @@ def hwext_read_rel_exp():
         return "T"
 
 
+def win_notif_rel_exp():
+    if len(windows) == 0:
+        return "T"
+    else:
+        # The slicing of `addr` is to stop windows from depending on upper bits of the
+        # address which we don't preserve.
+        #
+        # Note that this is a restriction not enforced by the hardware, since it does
+        # preserve those bits. I'd hope that nothing relies on them, though.
+        conjuncts = []
+        for window in windows:
+            conjuncts.append(rf"""(!nb offset.
+    cheshire_req_rel (SOME (nb, offset, NONE)) (buses.req.{name(window)} with addr := (({addr_width - 1} >< 0) buses.req.{name(window)}.addr: {addr_width} word))
+    /\ buses.rsp.{name(window)}.ready
+    <=> notif = SOME (Read ({name(window)}_read nb offset)))""")
+            conjuncts.append(rf"""(!nb offset wdata.
+    cheshire_req_rel (SOME (nb, offset, SOME wdata)) (buses.req.{name(window)} with addr := (({addr_width - 1} >< 0) buses.req.{name(window)}.addr: {addr_width} word))
+    /\ buses.rsp.{name(window)}.ready
+    <=> notif = SOME (Write ({name(window)}_write nb offset wdata)))""")
+        return " /\\\n  ".join(conjuncts)
+
+
+def win_read_rel_exp():
+    if len(windows) == 0:
+        return "T"
+    else:
+        return " /\\\n  ".join(
+            rf"""(!nb offset.
+    cheshire_req_rel (SOME (nb, offset, NONE)) (buses.req.{name(window)} with addr := (({addr_width - 1} >< 0) buses.req.{name(window)}.addr: {addr_width} word))
+    /\ buses.rsp.{name(window)}.ready
+    ==> buses.rsp.{name(window)}.error
+    \/ buses.rsp.{name(window)}.rdata = {ip.name}_{name(window)}_read st nb offset)"""
+            for window in windows
+        )
+
+
 def win_error_exp():
     if len(windows) == 0:
         return "F"
     else:
         return " \\/\n  ".join(
-            rf"buses.reg_req_win_{name(window)}.valid /\ buses.reg_rsp_win_{name(window)}.ready /\ buses.reg_rsp_win_{name(window)}.error"
+            rf"buses.req.{name(window)}.valid /\ buses.rsp.{name(window)}.ready /\ buses.rsp.{name(window)}.error"
+            for window in windows
+        )
+
+
+# We're also assuming that the window always responds immediately; we shouldn't, but this is the case for SPI and changing this would require rejiggering the way the model works.
+def win_ready_exp():
+    if len(windows) == 0:
+        return "T"
+    else:
+        return " /\\\n  ".join(
+            rf"(buses.req.{name(window)}.valid ==> buses.rsp.{name(window)}.ready)"
             for window in windows
         )
 
@@ -240,20 +305,38 @@ val _ = new_theory "{ip.name}RegsComm";
 
 {hw2reg_def()}
 
-{win_buses_def()}
+{win_buses_req_def()}
+
+{win_buses_rsp_def()}
+
+Datatype:
+  {ip.name}_win_buses = <|
+    req: {ip.name}_win_buses_req;
+    rsp: {ip.name}_win_buses_rsp;
+  |>
+End
 
 Definition {ip.name}_notif_rel_def:
   {ip.name}_notif_rel (notif: {ip.name}_notif option) (reg2hw: {ip.name}_reg2hw) <=>
   {notif_rel_exp()}
 End
 
+(* Whether a request is not a valid register access.
+ *
+ * Note that this also considers window accesses to be errors (in line with
+ * `*_reg_top`'s `error` signal). *)
 {req_error()}
 
 {req_error_alt()}
 
+(* Whether an address falls within a window. *)
+Definition {ip.name}_win_addr_def:
+  {ip.name}_win_addr (offset: num) <=>
+  {win_addr_exp()}
+End
+
 Definition {ip.name}_hwext_notif_rel_def:
   {ip.name}_hwext_notif_rel (notif: {ip.name}_hwext_notif option) (req: {addr_width} reg_req) <=>
-    ~{ip.name}_req_error req /\\
     {" /\\\n    ".join(term for reg in regs for term in reg_hwext_notif_rels(reg) if reg.hwext)}
 End
 
@@ -270,6 +353,22 @@ Proof
   irule EQ_EXT >> simp [{ip.name}_hwext_read_rel_def{"".join(f", {ip.name}_get_{name(reg)}_{name(field)}_def" for reg in regs for field in reg.fields if reg.hwext and field.swaccess.allows_read())}]
 QED
 
+Definition {ip.name}_win_notif_rel_def:
+  {ip.name}_win_notif_rel (notif: {ip.name}_hwext_notif option) (buses: {ip.name}_win_buses) <=>
+  {win_notif_rel_exp()}
+End
+
+Definition {ip.name}_win_read_rel_def:
+  {ip.name}_win_read_rel (st: {ip.name}_state) (buses: {ip.name}_win_buses) <=>
+  {win_read_rel_exp()}
+End
+
+Theorem {ip.name}_win_read_rel_fnums:
+  {ip.name}_win_read_rel (st with fnums := fnums) = {ip.name}_win_read_rel st
+Proof
+  irule EQ_EXT >> simp [{ip.name}_win_read_rel_def{"".join(f", {ip.name}_{name(window)}_read_def" for window in windows)}]
+QED
+
 (* Whether the transition from `regs` -> `regs'` is in accordance with the
  * instructions in `hw2reg`. *)
 Definition {ip.name}_hw_write_rel_def:
@@ -281,6 +380,11 @@ End
 Definition {ip.name}_win_error_def:
   {ip.name}_win_error (buses: {ip.name}_win_buses) <=>
   {win_error_exp()}
+End
+
+Definition {ip.name}_win_ready_def:
+  {ip.name}_win_ready (buses: {ip.name}_win_buses) <=>
+  {win_ready_exp()}
 End
 
 (* This probably shouldn't go here but I don't want to create a whole new file

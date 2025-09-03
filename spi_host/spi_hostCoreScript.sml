@@ -509,6 +509,13 @@ Proof
   >> gvs []
 QED
 
+Theorem spi_host_tick_ISR_fnums:
+  ISR (spi_host_tick notif (st with fnums := fnums)) = ISR (spi_host_tick notif st)
+Proof
+  simp [spi_host_tick_def]
+  >> rpt (pairarg_tac >> simp [])
+QED
+
 Theorem spi_host_tick_unused_fnums:
   ?n. !fnums. (!i. i < n ==> fnums i = st.fnums i) ==>
   spi_host_tick notif (st with fnums := fnums) =
@@ -518,18 +525,6 @@ Proof
   >> pure_rewrite_tac [spi_host_tick_def]
   >> LET_ELIM_TAC
   >> gvs [SF ETA_ss]
-QED
-
-Theorem unused_fnums_ignored_fnums_val:
-  (!fnums. (!i. i < n ==> fnums i = st.fnums i)
-    ==> f (st with fnums := fnums) = f st with fnums := (\i. fnums (i + n)))
-  ==> (f st).fnums = (\i. st.fnums (i + n))
-Proof
-  rpt strip_tac
-  >> first_x_assum $ qspec_then `st.fnums` assume_tac
-  >> `st with fnums := st.fnums = st` by simp [theorem "spi_host_state_component_equality"]
-  >> fs []
-  >> last_x_assum (fn thm => simp [Once thm])
 QED
 
 val _ = export_theory();

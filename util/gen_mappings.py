@@ -1,5 +1,4 @@
-# TODO: maybe remove the unused nb argument from read and the unused st argument
-# from write?
+# TODO: maybe remove the unused st argument from write?
 
 import sys
 from math import ceil
@@ -48,7 +47,7 @@ def write_case(entry: Register | Window):
     if isinstance(entry, Window):
         cond = rf"{hex(entry.offset)} <= offset /\ offset < {hex(entry.offset + entry.size_in_bytes)}"
         st_upd = "I"
-        write_notif = f"SOME (Write ({name(entry)}_write offset nb wdata))"
+        write_notif = f"SOME (Write ({name(entry)}_write nb offset wdata))"
     else:
         width = ceil(entry.get_width() / 8)
         cond = rf"offset = {hex(entry.offset)} /\ nb >= {width}"

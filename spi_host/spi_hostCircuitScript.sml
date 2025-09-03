@@ -25,8 +25,10 @@ val init_tm = add_x_inits ``
     reg2hw := ^spi_host_reg2hw_init_tm;
     (* TODO: these should be 'x too, but add_x_inits doesn't like reg_req *)
     win_buses := <|
-      reg_req_win_rxdata := <| addr := 0w; |>;
-      reg_req_win_txdata := <| addr := 0w; |>;
+      req := <|
+        rxdata := <| addr := 0w; |>;
+        txdata := <| addr := 0w; |>;
+      |>
     |>
   |>
 ``;

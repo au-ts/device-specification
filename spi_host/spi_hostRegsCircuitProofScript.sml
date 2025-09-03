@@ -1,11 +1,156 @@
 open HolKernel Parse boolLib bossLib;
-open BasicProvers wordsLib;
+open BasicProvers TypeBase combinSyntax wordsLib;
 open wordsTheory;
-open translatorTheory;
+open sumExtraTheory translatorTheory;
 open cheshireCircuitTheory cheshireOracleTheory spi_hostCircuitTheory spi_hostCircuitStateTheory spi_hostCoreTheory spi_hostMappingsTheory spi_hostRegsTheory spi_hostRegsCommTheory;
 
 val _ = new_theory "spi_hostRegsCircuitProof";
 
+(* Peripheral-independent section *)
+Theorem spi_host_read_fnums:
+  spi_host_read (st with fnums := fnums) nb offset = spi_host_read st nb offset
+Proof
+  asm_simp_tac std_ss [spi_host_read_def]
+  >> asm_simp_tac std_ss [spi_host_txdata_read_def, spi_host_rxdata_read_def]
+  >> asm_simp_tac std_ss [spi_host_state_accfupds]
+QED
+
+Theorem spi_host_write_fnums:
+  spi_host_write (st with fnums := fnums) nb offset wdata = spi_host_write st nb offset wdata
+Proof
+  asm_simp_tac std_ss [spi_host_write_def, spi_host_state_accfupds]
+QED
+
+Theorem spi_host_cheshire_req_fnums:
+  cheshire_req spi_host_read spi_host_write (st with fnums := fnums) req =
+  cheshire_req spi_host_read spi_host_write st req
+Proof
+  simp [cheshire_req_def, spi_host_read_fnums, spi_host_write_fnums]
+QED
+
+Theorem spi_host_read_ISR:
+  ISR (spi_host_read st nb offset) = ISR (spi_host_read st' nb offset)
+Proof
+  asm_simp_tac std_ss [spi_host_read_def]
+  >> rpt (IF_CASES_TAC >- asm_simp_tac std_ss [])
+  >> asm_simp_tac std_ss []
+QED
+
+Theorem spi_host_write_ISR:
+  ISR (spi_host_write st nb offset wdata) = ISR (spi_host_write st' nb offset wdata)
+Proof
+  asm_simp_tac std_ss [spi_host_write_def]
+  >> rpt (IF_CASES_TAC >- asm_simp_tac std_ss [])
+  >> asm_simp_tac std_ss []
+QED
+
+Theorem spi_host_cheshire_req_ISR:
+  ISR (cheshire_req spi_host_read spi_host_write st req) =
+  ISR (cheshire_req spi_host_read spi_host_write st' req)
+Proof
+  simp [cheshire_req_def]
+  >> ntac 4 CASE_TAC
+  >- simp [ISR_SUM_MAP, spi_host_read_ISR]
+  >- simp [ISR_SUM_MAP, spi_host_write_ISR]
+QED
+
+Theorem INR_imp_ISR:
+  x = INR y ==> ISR x
+Proof
+  simp []
+QED
+
+Theorem spi_host_read_unchanged:
+  spi_host_read st nb offset = INR (notif, rdata) ==>
+  ?rdata'. spi_host_read st' nb offset = INR (notif, rdata')
+Proof
+  asm_simp_tac std_ss [spi_host_read_def]
+  >> rpt (IF_CASES_TAC >- asm_simp_tac std_ss [])
+  >> asm_simp_tac std_ss []
+QED
+
+Theorem spi_host_write_unchanged:
+  spi_host_write st nb offset wdata = INR (st_upd, notif) ==>
+  spi_host_write st' nb offset wdata = INR (st_upd, notif)
+Proof
+  asm_simp_tac std_ss [spi_host_write_def]
+QED
+
+Theorem spi_host_cheshire_req_unchanged:
+  cheshire_req spi_host_read spi_host_write st req = INR (st_upd, notif, rdata) ==>
+  ?rdata'.
+  cheshire_req spi_host_read spi_host_write st' req = INR (st_upd, notif, rdata')
+Proof
+  rpt strip_tac
+  >> fs [cheshire_req_def]
+  >> rpt CASE_TAC
+  (* noop *)
+  >- fs []
+  (* read *)
+  >- (fs []
+      >> (Cases_on `spi_host_read st q q'` >- fs [])
+      >> fs []
+      >> pairarg_tac
+      >> gvs []
+      >> drule_then (qspec_then `st'` strip_assume_tac) spi_host_read_unchanged
+      >> simp [])
+  (* write *)
+  >- (fs []
+      >> (Cases_on `spi_host_write st q q' x` >- fs [])
+      >> fs []
+      >> pairarg_tac
+      >> gvs []
+      >> drule_then (qspec_then `st'` assume_tac) spi_host_write_unchanged
+      >> simp [])
+QED
+
+Theorem SUM_MAP_INR:
+  SUM_MAP f g x = INR y <=> ?z. x = INR z /\ g z = y
+Proof
+  Cases_on `x` >> simp []
+QED
+
+(* Peripheral-specific section (things that I would put in *CoreTheory if I
+ * could, but which depend on things defined later) *)
+Theorem spi_host_tick_ISR:
+  ISR (spi_host_tick notif st)
+Proof
+  simp [spi_host_tick_def]
+  >> rpt (pairarg_tac >> simp [])
+QED
+
+Theorem spi_host_cheshire_run_ISR_fnums:
+  ISR (cheshire_run spi_host_tick spi_host_read spi_host_write (st with fnums := fnums) reqs) =
+  ISR (cheshire_run spi_host_tick spi_host_read spi_host_write st reqs)
+Proof
+  qid_spec_tac `st`
+  >> qid_spec_tac `fnums`
+  >> Induct_on `reqs` using listTheory.SNOC_INDUCT
+  >- simp [cheshire_run_def]
+  >- (rpt strip_tac
+      >> iff_tac
+      >> rpt strip_tac
+      >> fs [cheshire_run_ISR_SNOC]
+
+      (* Apply the inductive hypothesis to prove that the other cheshire_run is also INR *)
+      >> qpat_assum `cheshire_run _ _ _ _ _ = INR _` (fn thm => assume_tac (MATCH_MP INR_imp_ISR thm))
+      >| [
+        last_assum (fn thm => drule_then assume_tac (iffLR (cj 1 thm))),
+        last_assum (fn thm => drule_then (qspec_then `fnums` assume_tac) (iffRL (cj 1 thm)))
+      ]
+      >> dxrule_then strip_assume_tac (iffLR ISR_exists)
+      >> PairCases_on `x'`
+      >> simp []
+
+      (* Obtain the other st_upd, notif and rdata *)
+      >> drule_then (qspec_then `x'0` strip_assume_tac) spi_host_cheshire_req_unchanged
+      >> simp []
+
+      (* Prove that spi_host_tick is INR *)
+      >> simp [spi_host_tick_ISR])
+QED
+
+(* Peripheral-independent section *)
 Theorem procs_append:
   procs (ps ++ qs) fext s s' = procs qs fext s (procs ps fext s s')
 Proof
@@ -35,12 +180,95 @@ Proof
   simp [COND_ARG1, GSYM COND_RAND, GSYM COND_RATOR]
 QED
 
+Triviality COND_2RAND:
+  !f b x y z w.
+  f (if b then x else z) (if b then y else w) =
+  (if b then f x y else f z w)
+Proof
+  Cases_on `b` >> simp []
+QED
+
+Triviality COND_2RAND_K:
+  !f b x y z w.
+  f (K (if b then x else z)) (if b then y else w) =
+  (if b then f (K x) y else f (K z) w)
+Proof
+  Cases_on `b` >> simp []
+QED
+
+(* A version of TypeBase.fields_of which uses the concrete input type rather
+ * than the generalised one. *)
+fun fields_of_concrete (rty: hol_type) = map (fn (name, {accessor, fupd, ty}) => let
+  val accessor' = inst (match_type (accessor |> type_of |> dom_rng |> fst) rty) accessor;
+  val fupd' = inst (match_type (fupd |> type_of |> dom_rng |> snd) (rty --> rty)) fupd;
+  val ty' = accessor' |> type_of |> dom_rng |> snd;
+in
+  (name, {accessor = accessor', fupd = fupd', ty = ty'})
+end) (fields_of rty)
+
+fun prove_identity_fupds (rty: hol_type) = let
+  val fields = fields_of_concrete rty;
+  val accessors = accessors_of rty;
+  val updates = updates_of rty;
+  val nchotomy = nchotomy_of rty;
+in
+  LIST_CONJ (map (fn ((_, {accessor, fupd, ty}), accessor_thm, update_thm) =>
+    prove (``!r. ^fupd (K (^accessor r)) r = r``,
+      gen_tac
+      >> qspec_then `r` strip_assume_tac nchotomy
+      >> first_x_assum (fn thm => pure_rewrite_tac [thm, accessor_thm, update_thm, combinTheory.K_THM])
+      >> REFL_TAC)
+  ) (Portable.zip3 (fields, accessors, updates)))
+end
+
+fun FORCE_FUPD_CONV ({accessor, fupd, ...}: rcd_fieldinfo) (tm: term) = let
+  val (f, _) = strip_comb tm;
+in
+  if term_eq f fupd then
+    raise UNCHANGED
+  else
+    prove (``^tm = ^fupd (K (^accessor ^tm)) ^tm``, pure_rewrite_tac [prove_identity_fupds (type_of tm)] >> REFL_TAC)
+end
+
+fun COND_RECORD_CONV tm = DEPTH_CONV (fn tm =>
+  if is_cond tm andalso TypeBase.is_record_type (type_of tm) then let
+    val fields = type_of tm |> fields_of_concrete;
+    val (cond, thn, els) = dest_cond tm;
+    val (thn_f, thn_args) = strip_comb thn;
+    val (els_f, els_args) = strip_comb els;
+    val info = get_first (fn (_, info as {fupd, ...}) =>
+      if term_eq thn_f fupd orelse term_eq els_f fupd then
+        SOME info
+      else
+        NONE
+    ) fields;
+  in case info of
+      SOME (info as {fupd, ...}) =>
+        (LAND_CONV (QCONV (FORCE_FUPD_CONV info))
+        THENC RAND_CONV (QCONV (FORCE_FUPD_CONV info))
+        THENC (if (not $ term_eq thn_f fupd orelse is_K_1 (el 1 thn_args))
+          andalso (not $ term_eq els_f fupd orelse is_K_1 (el 1 els_args))
+        then
+          PURE_ONCE_REWRITE_CONV [GSYM COND_2RAND_K]
+        else
+          PURE_ONCE_REWRITE_CONV [GSYM COND_2RAND])
+        (* Make sure the new ifs we've just generated are covered too. *)
+        THENC (LAND_CONV COND_RECORD_CONV)
+        THENC (RAND_CONV COND_RECORD_CONV)) tm
+    | NONE => raise UNCHANGED
+  end else
+    raise UNCHANGED) tm
+
 Theorem spi_host_reg_top_comb_1_flat = spi_host_reg_top_comb_1_def
   |> SRULE [COND_ARG1_K, COND_ARG1]
   |> SRULE [Ntimes LET_THM 5]
-  |> SRULE [SRULE [] (GSYM spi_host_req_error_alt), SF boolSimps.LET_ss];
+  |> SRULE [SRULE [] (GSYM spi_host_req_error_alt), SF boolSimps.LET_ss]
+  |> CONV_RULE COND_RECORD_CONV
+  |> SRULE [];
 
-Theorem spi_host_reg_top_comb_2_flat = SRULE [COND_ARG1_K, COND_ARG1] spi_host_reg_top_comb_2_def;
+Theorem spi_host_reg_top_comb_2_flat = spi_host_reg_top_comb_2_def
+  |> SRULE [SF boolSimps.LET_ss, COND_ARG1_K]
+  |> SRULE [Q.ISPEC `bit_field_insert 33 2` (GSYM COND_2RAND), Q.ISPEC `$:+ n` (GSYM COND_2RAND)];
 
 Theorem spi_host_reg_top_ff_flat = spi_host_reg_top_ff_def
   |> SRULE [COND_ARG1_K]
@@ -64,47 +292,6 @@ Proof
   simp [word_extract_def, word_bits_bit_field_insert, w2w_w2w, WORD_ALL_BITS]
 QED
 
-Theorem eq_w2n_iff_eq_n2w:
-  n < dimword (:'a) ==> (n = w2n (w: 'a word) <=> w = n2w n)
-Proof
-  rpt strip_tac
-  >> iff_tac
-  >> simp []
-QED
-
-Theorem w2n_eq_iff_eq_n2w:
-  n < dimword (:'a) ==> (w2n (w: 'a word) = n <=> w = n2w n)
-Proof
-  rpt strip_tac
-  >> iff_tac
-  >- (strip_tac
-      >> first_x_assum (assume_tac o GSYM)
-      >> simp [eq_w2n_iff_eq_n2w])
-  >- simp []
-QED
-
-Theorem spi_host_reg_top_comb_2_spi_host_read:
-  st.regs = s.regs ∧ spi_host_hwext_read_rel st s'.hw2reg ⇒
-  (33 >< 2) (spi_host_reg_top_comb_2 fext s s').reg_rsp_o =
-  case spi_host_read st nb (w2n s'.addr) of
-    INL _ => 0xFFFFFFFFw
-  | INR (_, value) => value
-Proof
-  simp [spi_host_hwext_read_rel_def, spi_host_reg_top_comb_2_flat, word_extract_bit_field_insert]
-  >> rpt IF_CASES_TAC
-  >> simp [spi_host_read_def, w2n_eq_iff_eq_n2w]
-QED
-
-Theorem mk_circuit_cstep:
-  ∃s'. mk_circuit sstep cstep s fext n = cstep (fext n) s' s'
-Proof
-  Cases_on ‘n’
-  >- (qexists ‘s’ >> simp [mk_circuit_def])
-  >- (qexists ‘(sstep (fext n') (mk_circuit sstep cstep s fext n')
-                      (mk_circuit sstep cstep s fext n'))’
-      >> simp [mk_circuit_def])
-QED
-
 Theorem word_bit_bit_field_insert:
   i < l \/ h < i ==> word_bit i (bit_field_insert h l a b) = word_bit i b
 Proof
@@ -117,6 +304,113 @@ Theorem FCP_APPLY_UPDATE_THM_2:
 Proof
   assume_tac fcpTheory.FCP_APPLY_UPDATE_THM >> simp []
 QED
+
+Theorem eq_w2n_iff_eq_n2w:
+  n < dimword (:'a) ==> (n = w2n (w: 'a word) <=> w = n2w n)
+Proof
+  rpt strip_tac
+  >> iff_tac
+  >> simp []
+QED
+
+Theorem eq_n2w_iff_w2n_eq:
+  n < dimword (:'a) ==> (w = n2w n <=> w2n (w: 'a word) = n)
+Proof
+  rpt strip_tac
+  >> iff_tac
+  >- simp []
+  >- (strip_tac
+      >> first_x_assum (assume_tac o GSYM)
+      >> simp [eq_w2n_iff_eq_n2w])
+QED
+
+Theorem mk_circuit_cstep:
+  ∃s'. mk_circuit sstep cstep s fext n = cstep (fext n) s' s'
+Proof
+  Cases_on ‘n’
+  >- (qexists ‘s’ >> simp [mk_circuit_def])
+  >- (qexists ‘(sstep (fext n') (mk_circuit sstep cstep s fext n')
+                      (mk_circuit sstep cstep s fext n'))’
+      >> simp [mk_circuit_def])
+QED
+
+Theorem spi_host_basic_signals_inner:
+  let
+    spi_host = mk_module (procs (ffs1 ++ [spi_host_reg_top_ff] ++ ffs2)) (procs ([spi_host_reg_top_comb_1] ++ combs ++ [spi_host_reg_top_comb_2])) spi_host_circuit_init;
+    req = reg_req_decode (fext n).reg_req_i: 6 reg_req;
+    s' = spi_host fext fbits n;
+    rsp = reg_rsp_decode s'.reg_rsp_o;
+  in
+  (!proc fext s s'. MEM proc (ffs1 ++ ffs2 ++ combs) ==>
+    let
+      s'' = proc fext s s'
+    in
+      s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
+      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
+      /\ s''.win_buses.req = s'.win_buses.req)
+  ==> s'.addr = req.addr /\ s'.write = req.write /\ s'.wdata = req.wdata
+    /\ s'.wstrb = req.wstrb /\ s'.valid = req.valid /\ s'.error = spi_host_req_error req
+Proof
+  qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
+  >> qpat_abbrev_tac `cstep = procs (_ ++ [spi_host_reg_top_comb_2])`
+  >> `?s'. mk_circuit sstep cstep (spi_host_circuit_init fbits) fext n = cstep (fext n) s' s'` by irule mk_circuit_cstep
+  >> simp [mk_module_def]
+  >> unabbrev_all_tac
+  >> simp [procs_append, procs_def, spi_host_reg_top_comb_2_flat, reg_rsp_decode_def, word_bit_bit_field_insert]
+  >> simp [word_bit_def, FCP_APPLY_UPDATE_THM_2]
+  >> simp [procs_unchanged, spi_host_reg_top_comb_1_flat]
+QED
+
+Theorem spi_host_basic_signals = SRULE [SF boolSimps.LET_ss] spi_host_basic_signals_inner;
+
+Theorem spi_host_reg_top_spi_host_read_inner:
+  let
+    spi_host = mk_module (procs (ffs1 ++ [spi_host_reg_top_ff] ++ ffs2)) (procs ([spi_host_reg_top_comb_1] ++ combs ++ [spi_host_reg_top_comb_2])) spi_host_circuit_init;
+    req = reg_req_decode (fext n).reg_req_i: 6 reg_req;
+    rsp = reg_rsp_decode (spi_host fext fbits n).reg_rsp_o;
+  in
+  (!proc fext s s'. MEM proc (ffs1 ++ ffs2 ++ combs) ==>
+    let
+      s'' = proc fext s s'
+    in
+      s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
+      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
+      /\ s''.win_buses.req = s'.win_buses.req)
+  /\ spi_host_state_rel st (spi_host fext fbits n)
+  /\ cheshire_req_rel (SOME (nb, offset, NONE)) req
+  /\ ~rsp.error
+  ==> ?notif. spi_host_read st nb offset = INR (notif, rsp.rdata)
+Proof
+  simp []
+  >> rpt strip_tac
+  >> drule_all_then (qspecl_then [`n`, `fext`, `fbits`] strip_assume_tac) spi_host_basic_signals
+  >> `!fext s s'. (\x. x.win_buses.req) (procs combs fext s s') = (\x. x.win_buses.req) s'` by (irule procs_unchanged >> simp [])
+  >> fs []
+  >> qmatch_goalsub_abbrev_tac `mk_module sstep cstep`
+  >> `?s'. mk_circuit sstep cstep (spi_host_circuit_init fbits) fext n = cstep (fext n) s' s'` by irule mk_circuit_cstep
+  >> unabbrev_all_tac
+  >> fs [mk_module_def, procs_def, procs_append, spi_host_state_rel_def, spi_host_core_state_rel_def, spi_host_hwext_read_rel_def, spi_host_win_read_rel_def, spi_host_win_ready_def]
+  >> first_x_assum kall_tac
+  >> qpat_x_assum `spi_host_notif_rel _ _` kall_tac
+  >> rpt (qpat_x_assum `!nb offset. _` $ qspecl_then [`nb`, `offset`] assume_tac)
+  >> gvs [cheshire_req_rel_def]
+  >> gs [spi_host_reg_top_comb_2_flat, procs_unchanged, reg_rsp_decode_def, word_extract_bit_field_insert, word_bit_bit_field_insert]
+  >> fs [word_bit_def, FCP_APPLY_UPDATE_THM_2]
+  >> qabbrev_tac `s'' = procs combs (fext n) s' (spi_host_reg_top_comb_1 (fext n) s' s')`
+  >> fs [spi_host_reg_top_comb_1_flat]
+  >> qmatch_asmsub_abbrev_tac `req.valid`
+  >> rpt (IF_CASES_TAC
+          >- (gs [WORD_LS, WORD_LO, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0"]
+              >> simp [spi_host_read_def, Excl "w2n_eq_0"]
+              >> rfs [Abbr `req`, reg_req_decode_def, WORD_EXTRACT_COMP_THM]))
+  >> full_simp_tac std_ss [WORD_LS, WORD_LO, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0", dimword_def, dimindex_6]
+  >> asm_simp_tac std_ss [spi_host_read_def, Excl "w2n_eq_0"]
+  >> full_simp_tac std_ss [spi_host_req_error_def, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0", dimword_def, dimindex_6]
+QED
+
+Theorem spi_host_reg_top_spi_host_read = SRULE [SF boolSimps.LET_ss] spi_host_reg_top_spi_host_read_inner;
 
 Theorem ISL_SUM_MAP:
   ISL (SUM_MAP f g z) = ISL z
@@ -152,41 +446,47 @@ QED
 
 Theorem spi_host_req_error_spi_host_write:
   cheshire_req_rel (SOME (nb, offset, SOME wdata)) req ==>
-  ISL (spi_host_write st nb offset wdata) = spi_host_req_error req
+  (ISL (spi_host_write st nb offset wdata) <=> spi_host_req_error req /\ ~spi_host_win_addr offset)
 Proof
   simp [cheshire_req_rel_write]
   >> rpt strip_tac
-  >> asm_simp_tac std_ss [spi_host_write_def, dimword_def, dimindex_6, w2n_eq_iff_eq_n2w]
+  >> asm_simp_tac std_ss [spi_host_write_def, dimword_def, dimindex_6, GSYM eq_n2w_iff_w2n_eq]
   >> rpt TOP_CASE_TAC
-  >> simp [spi_host_req_error_def]
+  >> simp [spi_host_win_addr_def, spi_host_req_error_def]
   >> dep_rewrite.DEP_REWRITE_TAC nb_wstrb_insts
   >> fs [GT_GE1]
 QED
 
 Theorem spi_host_req_error_spi_host_read:
   cheshire_req_rel (SOME (nb, offset, NONE)) req ==>
-  ISL (spi_host_read st nb offset) = spi_host_req_error req
+  (ISL (spi_host_read st nb offset) <=> spi_host_req_error req /\ ~spi_host_win_addr offset)
 Proof
   simp [cheshire_req_rel_read]
   >> rpt strip_tac
-  >> simp [spi_host_read_def, w2n_eq_iff_eq_n2w]
+  >> simp [spi_host_read_def, GSYM eq_n2w_iff_w2n_eq]
   >> rpt IF_CASES_TAC
-  >> simp [spi_host_req_error_def]
+  >> simp [spi_host_win_addr_def, spi_host_req_error_def]
 QED
 
 Theorem cheshire_req_spi_host_req_error:
-  cheshire_req_rel req_m req_c
-  ==> ISL (cheshire_req spi_host_read spi_host_write st req_m) = spi_host_req_error req_c
+  cheshire_req_rel req_m req_c ==>
+  (ISL (cheshire_req spi_host_read spi_host_write st req_m) <=> spi_host_req_error req_c /\ ~spi_host_win_addr (w2n req_c.addr))
 Proof
   rpt strip_tac
   >> simp [cheshire_req_def]
   >> rpt TOP_CASE_TAC
   >- fs [cheshire_req_rel_def, spi_host_req_error_def]
-  >- simp [ISL_SUM_MAP, spi_host_req_error_spi_host_read]
-  >- simp [ISL_SUM_MAP, spi_host_req_error_spi_host_write]
+  >- fs [ISL_SUM_MAP, cheshire_req_rel_def, spi_host_req_error_spi_host_read]
+  >- fs [ISL_SUM_MAP, cheshire_req_rel_def, spi_host_req_error_spi_host_write]
 QED
 
-Theorem spi_host_reg_top_rsp_ready_error_inner:
+Theorem spi_host_win_addr_spi_host_req_error:
+  req.valid /\ spi_host_win_addr (w2n req.addr) ==> spi_host_req_error req
+Proof
+  simp [spi_host_win_addr_def, spi_host_req_error_def, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0"]
+QED
+
+Theorem spi_host_reg_top_rsp_ready_inner:
   let
     spi_host = mk_module (procs (ffs1 ++ [spi_host_reg_top_ff] ++ ffs2)) (procs ([spi_host_reg_top_comb_1] ++ combs ++ [spi_host_reg_top_comb_2])) spi_host_circuit_init;
     req = reg_req_decode (fext n).reg_req_i: 6 reg_req;
@@ -198,25 +498,31 @@ Theorem spi_host_reg_top_rsp_ready_error_inner:
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error)
-  ==> rsp.ready /\ rsp.error = spi_host_req_error req
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
+      /\ s''.win_buses.req = s'.win_buses.req)
+  /\ spi_host_win_ready (spi_host fext fbits n).win_buses
+  /\ req.valid
+  ==> rsp.ready
 Proof
   qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
   >> qpat_abbrev_tac `cstep = procs (_ ++ [spi_host_reg_top_comb_2])`
   >> `?s'. mk_circuit sstep cstep (spi_host_circuit_init fbits) fext n = cstep (fext n) s' s'` by irule mk_circuit_cstep
-  >> simp [mk_module_def]
+  >> simp [mk_module_def, reg_req_decode_def, reg_rsp_decode_def, spi_host_win_ready_def]
   >> unabbrev_all_tac
-  >> simp [procs_append, procs_def, spi_host_reg_top_comb_2_flat]
-  >> simp [procs_unchanged, spi_host_reg_top_comb_1_flat, reg_rsp_decode_def, word_bit_bit_field_insert, word_bit_def, FCP_APPLY_UPDATE_THM_2]
+  >> rpt strip_tac
+  >> `!fext s s'. (\x. x.win_buses.req) (procs combs fext s s') = (\x. x.win_buses.req) s'` by (irule procs_unchanged >> simp [])
+  >> fs [procs_append, procs_def, spi_host_reg_top_comb_2_flat, word_bit_bit_field_insert]
+  >> fs [word_bit_def, FCP_APPLY_UPDATE_THM_2, procs_unchanged]
+  >> qpat_abbrev_tac `s'' = procs combs _ _ _`
+  >> fs [spi_host_reg_top_comb_1_flat, reg_req_decode_def, word_bit_def, WORD_LO, WORD_LS]
 QED
 
-Theorem spi_host_reg_top_rsp_ready_error = SRULE [SF boolSimps.LET_ss] spi_host_reg_top_rsp_ready_error_inner;
+Theorem spi_host_reg_top_rsp_ready = SRULE [SF boolSimps.LET_ss] spi_host_reg_top_rsp_ready_inner;
 
-Theorem spi_host_reg_top_rsp_correct_inner:
+Theorem spi_host_reg_top_rsp_error_inner:
   let
     spi_host = mk_module (procs (ffs1 ++ [spi_host_reg_top_ff] ++ ffs2)) (procs ([spi_host_reg_top_comb_1] ++ combs ++ [spi_host_reg_top_comb_2])) spi_host_circuit_init;
-    req_c = reg_req_decode (fext n).reg_req_i: 6 reg_req;
-    oracle_res = cheshire_req spi_host_read spi_host_write st req_m;
+    req = reg_req_decode (fext n).reg_req_i: 6 reg_req;
     rsp = reg_rsp_decode (spi_host fext fbits n).reg_rsp_o;
   in
   (!proc fext s s'. MEM proc (ffs1 ++ ffs2 ++ combs) ==>
@@ -225,40 +531,28 @@ Theorem spi_host_reg_top_rsp_correct_inner:
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error)
-  /\ spi_host_state_rel st (spi_host fext fbits n)
-  /\ cheshire_req_rel req_m req_c
-  ==> rsp.ready
-    /\ rsp.error = ISL oracle_res
-    /\ (!st_upd notif rdata. oracle_res = INR (st_upd, notif, SOME rdata) ==> rsp.rdata = rdata)
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
+      /\ s''.win_buses.req = s'.win_buses.req)
+  /\ req.valid
+  /\ rsp.ready
+  ==> (rsp.error <=> spi_host_req_error req /\ ~spi_host_win_addr (w2n req.addr) \/ spi_host_win_error (spi_host fext fbits n).win_buses)
 Proof
-  simp []
-  >> qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
-  >> qpat_abbrev_tac `cstep = procs (spi_host_reg_top_comb_1::_)`
-  >> rpt strip_tac
+  qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
+  >> qpat_abbrev_tac `cstep = procs (_ ++ [spi_host_reg_top_comb_2])`
   >> `?s'. mk_circuit sstep cstep (spi_host_circuit_init fbits) fext n = cstep (fext n) s' s'` by irule mk_circuit_cstep
+  >> simp [mk_module_def, reg_req_decode_def, reg_rsp_decode_def, spi_host_win_addr_def, spi_host_win_error_def]
   >> unabbrev_all_tac
-  >> drule_then assume_tac spi_host_reg_top_rsp_ready_error
-  >> simp []
-  (* error *)
-  >- simp [cheshire_req_spi_host_req_error]
-  (* rdata *)
-  >- (fs [mk_module_def, procs_def, procs_append, reg_rsp_decode_def]
-      >> drule_then strip_assume_tac cheshire_req_INR_cases
-      >- fs []
-      >- (dep_rewrite.DEP_REWRITE_TAC [spi_host_reg_top_comb_2_spi_host_read]
-          >> `!fext s s'. (spi_host_reg_top_comb_1 fext s s').regs = s'.regs` by simp [spi_host_reg_top_comb_1_flat]
-          >> `!fext s s'. (spi_host_reg_top_comb_2 fext s s').regs = s'.regs` by simp [spi_host_reg_top_comb_2_flat]
-          >> `st.regs = (spi_host_reg_top_comb_2 (fext n) s' (procs combs (fext n) s' (spi_host_reg_top_comb_1 (fext n) s' s'))).regs` by fs [spi_host_state_rel_def, spi_host_core_state_rel_def]
-          >> rfs [procs_unchanged]
-          >> `!fext s s'. (spi_host_reg_top_comb_2 fext s s').hw2reg = s'.hw2reg` by simp [spi_host_reg_top_comb_2_flat]
-          >> `spi_host_hwext_read_rel st (spi_host_reg_top_comb_2 (fext n) s' (procs combs (fext n) s' (spi_host_reg_top_comb_1 (fext n) s' s'))).hw2reg` by fs [spi_host_state_rel_def, spi_host_core_state_rel_def]
-          >> gs [cheshire_req_rel_read]
-          >> simp [spi_host_reg_top_comb_1_flat, cheshire_req_def])
-      >- fs [])
+  >> rpt strip_tac
+  >> `!fext s s'. (\x. x.win_buses.req) (procs combs fext s s') = (\x. x.win_buses.req) s'` by (irule procs_unchanged >> simp [])
+  >> fs [procs_append, procs_def, spi_host_reg_top_comb_2_flat, word_bit_bit_field_insert]
+  >> gs [word_bit_def, FCP_APPLY_UPDATE_THM_2, procs_unchanged]
+  >> qabbrev_tac `s'' = procs combs (fext n) s' (spi_host_reg_top_comb_1 (fext n) s' s')`
+  >> fs [spi_host_reg_top_comb_1_flat, reg_req_decode_def, word_bit_def, WORD_LO, WORD_LS]
+  >> rpt IF_CASES_TAC
+  >> gs [spi_host_req_error_def]
 QED
 
-Theorem spi_host_reg_top_rsp_correct = SRULE [SF boolSimps.LET_ss] spi_host_reg_top_rsp_correct_inner;
+Theorem spi_host_reg_top_rsp_error = SRULE [SF boolSimps.LET_ss] spi_host_reg_top_rsp_error_inner;
 
 Theorem spi_host_write_spi_host_hwext_notif_rel:
   cheshire_req_rel (SOME (nb, offset, SOME wdata)) req /\
@@ -269,11 +563,10 @@ Proof
   >> pure_rewrite_tac [spi_host_write_def]
   >> rpt TOP_CASE_TAC
   >> rpt strip_tac
-  >> fs [spi_host_hwext_notif_rel_def, spi_host_req_error_def, w2n_eq_iff_eq_n2w]
+  >> fs [spi_host_hwext_notif_rel_def, spi_host_req_error_def, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0"]
+  >> simp [GSYM eq_n2w_iff_w2n_eq]
   >> dep_rewrite.DEP_REWRITE_TAC nb_wstrb_insts
-  >> simp []
-  >> first_x_assum (assume_tac o GSYM)
-  >> simp []
+  >> gvs []
 QED
 
 Theorem spi_host_read_spi_host_hwext_notif_rel:
@@ -284,15 +577,27 @@ Proof
   simp [cheshire_req_rel_read]
   >> pure_rewrite_tac [spi_host_read_def]
   >> rpt TOP_CASE_TAC
-  >> fs [spi_host_hwext_notif_rel_def, spi_host_req_error_def, w2n_eq_iff_eq_n2w]
+  >> rpt strip_tac
+  >> gvs [spi_host_hwext_notif_rel_def, spi_host_req_error_def, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0"]
 QED
 
-Theorem spi_host_parsed_signals_inner:
+Theorem cheshire_req_spi_host_hwext_notif_rel:
+  cheshire_req_rel req_m req_c /\
+  cheshire_req spi_host_read spi_host_write st req_m = INR (_, notif, _) ==>
+  spi_host_hwext_notif_rel notif req_c
+Proof
+  rpt strip_tac
+  >> drule_then strip_assume_tac cheshire_req_INR_cases
+  >- fs [cheshire_req_rel_def, spi_host_hwext_notif_rel_def, spi_host_req_error_def]
+  >- (fs [] >> drule_all spi_host_read_spi_host_hwext_notif_rel >> simp [])
+  >- (fs [] >> drule_all spi_host_write_spi_host_hwext_notif_rel >> simp [])
+QED
+
+Theorem spi_host_reg_top_rsp_correct_inner:
   let
     spi_host = mk_module (procs (ffs1 ++ [spi_host_reg_top_ff] ++ ffs2)) (procs ([spi_host_reg_top_comb_1] ++ combs ++ [spi_host_reg_top_comb_2])) spi_host_circuit_init;
-    req = reg_req_decode (fext n).reg_req_i: 6 reg_req;
-    s' = spi_host fext fbits n;
-    rsp = reg_rsp_decode s'.reg_rsp_o;
+    req_c = reg_req_decode (fext n).reg_req_i: 6 reg_req;
+    rsp = reg_rsp_decode (spi_host fext fbits n).reg_rsp_o;
   in
   (!proc fext s s'. MEM proc (ffs1 ++ ffs2 ++ combs) ==>
     let
@@ -300,21 +605,62 @@ Theorem spi_host_parsed_signals_inner:
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error)
-  ==> s'.addr = req.addr /\ s'.write = req.write /\ s'.wdata = req.wdata
-    /\ s'.wstrb = req.wstrb /\ s'.valid = req.valid /\ s'.error = rsp.error
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
+      /\ s''.win_buses.req = s'.win_buses.req)
+  /\ (!st req_m fext fbits n st_upd notif rdata.
+    let
+      req_c = reg_req_decode (fext n).reg_req_i: 6 reg_req
+    in
+    spi_host_state_rel st (spi_host fext fbits n)
+    /\ cheshire_req_rel req_m req_c
+    /\ cheshire_req spi_host_read spi_host_write st req_m = INR (st_upd, notif, rdata)
+    /\ ISR (spi_host_tick notif st)
+    (* TODO: the other way to do this would be to compare notif to
+     * (spi_host_reg_top_comb_1 (fext n) (spi_host fext fbits n) (spi_host fext fbits n)).reg2hw;
+     * that has the advantage of being closer to what spi_host_core actually operates
+     * on, but is also uglier.
+     *
+     * So, we can try switching to that if this way turns out to be annoying. *)
+    /\ spi_host_hwext_notif_rel notif req_c
+    (* Note: somewhat counterintuitively, this actually shows that
+     * spi_host_hwext_read_rel is true for the next clock cycle, not this one. *)
+    ==> ?fnums. spi_host_core_state_rel (st_upd (OUTR (spi_host_tick notif (st with fnums := fnums)))) (spi_host fext fbits (SUC n))
+      (* Note: this is only true because st_upd hasn't run yet, otherwise software
+       * might have overwritten some stuff and made this false. *)
+      /\ spi_host_hw_write_rel (st with fnums := fnums).regs (OUTR (spi_host_tick notif (st with fnums := fnums))).regs
+                          (spi_host fext fbits n).hw2reg
+      /\ ~spi_host_win_error (spi_host fext fbits n).win_buses)
+  /\ spi_host_state_rel st (spi_host fext fbits n)
+  /\ cheshire_req_rel req_m req_c
+  /\ cheshire_req spi_host_read spi_host_write st req_m = INR (st_upd, notif, rdata)
+  /\ req_c.valid
+  /\ rsp.ready
+  ==> (rsp.error ==> ISL (spi_host_tick notif st))
+    /\ (!value. ~rsp.error /\ rdata = SOME value ==> rsp.rdata = value)
 Proof
-  qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
-  >> qpat_abbrev_tac `cstep = procs (_ ++ [spi_host_reg_top_comb_2])`
+  simp []
+  >> qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
+  >> qpat_abbrev_tac `cstep = procs (spi_host_reg_top_comb_1::_)`
+  >> rpt strip_tac
   >> `?s'. mk_circuit sstep cstep (spi_host_circuit_init fbits) fext n = cstep (fext n) s' s'` by irule mk_circuit_cstep
-  >> simp [mk_module_def]
   >> unabbrev_all_tac
-  >> simp [procs_append, procs_def, spi_host_reg_top_comb_2_flat, reg_rsp_decode_def, word_bit_bit_field_insert]
-  >> simp [word_bit_def, FCP_APPLY_UPDATE_THM_2]
-  >> simp [procs_unchanged, spi_host_reg_top_comb_1_flat]
+  (* error *)
+  >- (drule_all_then strip_assume_tac (iffLR spi_host_reg_top_rsp_error)
+      >- (drule_all_then (qspec_then `st` assume_tac) (iffRL cheshire_req_spi_host_req_error)
+          >> rfs [])
+      >- (drule_all_then assume_tac cheshire_req_spi_host_hwext_notif_rel
+          >> spose_not_then (assume_tac o SRULE [])
+          >> qpat_x_assum `∀st req_m fext fbits n st_upd notif rdata. _` $ drule_all_then strip_assume_tac))
+  (* rdata *)
+  >- (drule_then strip_assume_tac cheshire_req_INR_cases
+      >- fs []
+      >- (gvs []
+          >> drule_all_then strip_assume_tac spi_host_reg_top_spi_host_read
+          >> gvs [])
+      >- fs [])
 QED
 
-Theorem spi_host_parsed_signals = SRULE [SF boolSimps.LET_ss] spi_host_parsed_signals_inner;
+Theorem spi_host_reg_top_rsp_correct = SRULE [SF boolSimps.LET_ss] spi_host_reg_top_rsp_correct_inner;
 
 Theorem spi_host_reg_top_spi_host_state_rel_step_inner:
   let
@@ -327,7 +673,8 @@ Theorem spi_host_reg_top_spi_host_state_rel_step_inner:
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error)
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
+      /\ s''.win_buses.req = s'.win_buses.req)
   (* Not strictly a requirement, but makes this easier to state (we don't have to
    * add an spi_host_reg_top_ff into the spi_host_hw_write_rel condition).
    *
@@ -343,46 +690,37 @@ Theorem spi_host_reg_top_spi_host_state_rel_step_inner:
     spi_host_state_rel st (spi_host fext fbits n)
     /\ cheshire_req_rel req_m req_c
     /\ cheshire_req spi_host_read spi_host_write st req_m = INR (st_upd, notif, rdata)
-    (* TODO: the other way to do this would be to compare notif to
-     * (spi_host_reg_top_comb_1 (fext n) (spi_host fext fbits n) (spi_host fext fbits n)).reg2hw;
-     * that has the advantage of being closer to what spi_host_core actually operates
-     * on, but is also uglier.
-     *
-     * So, we can try switching to that if this way turns out to be annoying. *)
+    /\ ISR (spi_host_tick notif st)
     /\ spi_host_hwext_notif_rel notif req_c
-    (* Note: somewhat counterintuitively, this actually shows that
-     * spi_host_hwext_read_rel is true for the next clock cycle, not this one. *)
-    ==> ?fnums. spi_host_core_state_rel (st_upd (spi_host_tick notif (st with fnums := fnums))) (spi_host fext fbits (SUC n))
-      (* Note: this is only true because st_upd hasn't run yet, otherwise software
-       * might have overwritten some stuff and made this false. *)
-      /\ spi_host_hw_write_rel (st with fnums := fnums).regs (spi_host_tick notif (st with fnums := fnums)).regs
-                          (spi_host fext fbits n).hw2reg)
+    ==> ?fnums. spi_host_core_state_rel (st_upd (OUTR (spi_host_tick notif (st with fnums := fnums)))) (spi_host fext fbits (SUC n))
+      /\ spi_host_hw_write_rel (st with fnums := fnums).regs (OUTR (spi_host_tick notif (st with fnums := fnums))).regs
+                          (spi_host fext fbits n).hw2reg
+      /\ ~spi_host_win_error (spi_host fext fbits n).win_buses)
   /\ spi_host_state_rel st (spi_host fext fbits n)
   /\ cheshire_req_rel req_m req_c
   /\ cheshire_req spi_host_read spi_host_write st req_m = INR (st_upd, notif, rdata)
-  ==> ?fnums. spi_host_state_rel (st_upd (spi_host_tick notif (st with fnums := fnums))) (spi_host fext fbits (SUC n))
+  /\ ISR (spi_host_tick notif st)
+  ==> ?fnums. spi_host_state_rel (st_upd (OUTR (spi_host_tick notif (st with fnums := fnums)))) (spi_host fext fbits (SUC n))
 Proof
   simp []
   >> rpt strip_tac
 
-  >> drule_all_then strip_assume_tac spi_host_reg_top_rsp_correct
-  >> drule_then assume_tac spi_host_parsed_signals
-  >> drule_then assume_tac spi_host_reg_top_rsp_ready_error
-
-  >> qabbrev_tac `req_c = reg_req_decode (fext n).reg_req_i: 6 reg_req`
-
-  >> `spi_host_hwext_notif_rel notif req_c`
-     by (drule_then strip_assume_tac cheshire_req_INR_cases
-         >- fs [cheshire_req_rel_def, spi_host_hwext_notif_rel_def, spi_host_req_error_def]
-         >- (fs [] >> drule_all spi_host_read_spi_host_hwext_notif_rel >> simp [])
-         >- (fs [] >> drule_all spi_host_write_spi_host_hwext_notif_rel >> simp []))
+  >> drule_then (qspecl_then [`n`, `fext`, `fbits`] strip_assume_tac) spi_host_basic_signals
+  >> drule_all_then assume_tac cheshire_req_spi_host_hwext_notif_rel
 
   (* We need to do this in all cases so we can pick the value of fnums. *)
-  >> fs [Abbr `req_c`]
-  >> qpat_x_assum `!st nb fext fbits n st_upd notif rdata. _ ==> ?fnums. _`
+  >> qpat_assum `!st req_m fext fbits n st_upd notif rdata. _ ==> ?fnums. _`
        $ drule_all_then strip_assume_tac
-  >> qabbrev_tac `req_c = reg_req_decode (fext n).reg_req_i: 6 reg_req`
   >> qexists `fnums`
+
+  >> `?st'. spi_host_tick notif (st with fnums := fnums) = INR st'`
+     by (irule (iffLR ISR_exists) >> simp [spi_host_tick_ISR_fnums])
+
+  >> qmatch_asmsub_abbrev_tac `(req_c: 'a reg_req).addr`
+  >> `~spi_host_win_addr (w2n req_c.addr) ==> ~spi_host_req_error req_c`
+     by (`~ISL (cheshire_req spi_host_read spi_host_write st req_m)` by simp []
+         >> drule_then (fn thm => full_simp_tac bool_ss [thm]) cheshire_req_spi_host_req_error)
+  >> fs [Abbr `req_c`]
 
   >> simp [spi_host_state_rel_def]
   >> rpt strip_tac
@@ -400,42 +738,37 @@ Proof
           >> simp [spi_host_reg_top_ff_flat, procs_unchanged]
           (* TODO: auto-generate this (probably need to make a new *Lib.sml to put it in...) *)
           >> simp [spi_host_regs_component_equality, spi_host_intr_state_component_equality, spi_host_intr_enable_component_equality, spi_host_control_component_equality, spi_host_status_component_equality, spi_host_configopts_0_component_equality, spi_host_configopts_1_component_equality, spi_host_configopts_2_component_equality, spi_host_csid_component_equality, spi_host_error_enable_component_equality, spi_host_error_status_component_equality, spi_host_event_enable_component_equality]
-          >> gs [spi_host_state_rel_def, spi_host_tick_hwro_unchanged, spi_host_hw_write_rel_def])
-      >- (fs [cheshire_req_rel_write]
+          >> gs [spi_host_state_rel_def, spi_host_hw_write_rel_def]
+          >> drule_then strip_assume_tac spi_host_tick_hwro_unchanged
+          >> simp [])
+      >- (gvs [cheshire_req_rel_write, spi_host_win_addr_def]
           >> drule spi_host_write_st_upd_alt
           >> simp [spi_host_reg_top_ff_flat, procs_unchanged]
           >> simp [spi_host_regs_component_equality, spi_host_intr_state_component_equality, spi_host_intr_enable_component_equality, spi_host_control_component_equality, spi_host_status_component_equality, spi_host_configopts_0_component_equality, spi_host_configopts_1_component_equality, spi_host_configopts_2_component_equality, spi_host_csid_component_equality, spi_host_error_enable_component_equality, spi_host_error_status_component_equality, spi_host_event_enable_component_equality]
-          >> fs [spi_host_state_rel_def, spi_host_tick_hwro_unchanged, spi_host_hw_write_rel_def, reg_rsp_decode_def, w2n_eq_iff_eq_n2w]))
+          >> fs [spi_host_state_rel_def, spi_host_hw_write_rel_def, reg_rsp_decode_def, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0", Cong AND_CONG]
+          >> drule_then strip_assume_tac spi_host_tick_hwro_unchanged
+          >> simp []))
   (* buffered_notif *)
   >- (simp [mk_module_def, mk_circuit_def, procs_def, procs_append, spi_host_reg_top_comb_2_flat]
       >> simp [procs_unchanged, spi_host_reg_top_comb_1_flat]
       >> simp [spi_host_notif_rel_def]
       >> simp [spi_host_reg_top_ff_flat, procs_unchanged, GSYM mk_module_def]
-      >> fs [reg_rsp_decode_def])
+      >> fs [reg_rsp_decode_def]
+
+      (* Avoid the >- operators complaining if the goal was already solved. *)
+      >> (drule_then strip_assume_tac cheshire_req_INR_st_upd_cases
+          >- (drule_then (fn thm => full_simp_tac pure_ss [thm]) cheshire_req_rel_valid_write
+              >> drule_then assume_tac spi_host_tick_buffered_notif_NONE
+              >> fs [])
+          >- (fs [cheshire_req_rel_write]
+              >> drule spi_host_write_st_upd_alt
+              >> simp []
+              >> rpt (IF_CASES_TAC >- fs [GSYM eq_n2w_iff_w2n_eq, spi_host_win_addr_def])
+              >> drule_then assume_tac spi_host_tick_buffered_notif_NONE
+              >> fs [GSYM eq_n2w_iff_w2n_eq])))
 QED
 
 Theorem spi_host_reg_top_spi_host_state_rel_step = SRULE [SF boolSimps.LET_ss] spi_host_reg_top_spi_host_state_rel_step_inner;
-
-Theorem spi_host_read_fnums:
-  spi_host_read (st with fnums := fnums) nb offset = spi_host_read st nb offset
-Proof
-  asm_simp_tac std_ss [spi_host_read_def]
-  (* >> asm_simp_tac std_ss [spi_host_get_status_fmtfull_def, spi_host_get_status_rxfull_def, spi_host_get_status_fmtempty_def, spi_host_get_status_hostidle_def, spi_host_get_status_targetidle_def, spi_host_get_status_rxempty_def, spi_host_get_status_txfull_def, spi_host_get_status_acqfull_def, spi_host_get_status_txempty_def, spi_host_get_status_acqempty_def, spi_host_get_rdata_rdata_def, spi_host_get_fifo_status_fmtlvl_def, spi_host_get_fifo_status_txlvl_def, spi_host_get_fifo_status_rxlvl_def, spi_host_get_fifo_status_acqlvl_def, spi_host_get_val_scl_rx_def, spi_host_get_val_sda_rx_def, spi_host_get_acqdata_abyte_def, spi_host_get_acqdata_signal_def] *)
-  >> asm_simp_tac std_ss [spi_host_state_accfupds]
-QED
-
-Theorem spi_host_write_fnums:
-  spi_host_write (st with fnums := fnums) nb offset wdata = spi_host_write st nb offset wdata
-Proof
-  asm_simp_tac std_ss [spi_host_write_def, spi_host_state_accfupds]
-QED
-
-Theorem spi_host_cheshire_req_fnums:
-  cheshire_req spi_host_read spi_host_write (st with fnums := fnums) req =
-  cheshire_req spi_host_read spi_host_write st req
-Proof
-  simp [cheshire_req_def, spi_host_read_fnums, spi_host_write_fnums]
-QED
 
 Theorem OUTR_SUM_MAP:
   ISR z ==> OUTR (SUM_MAP f g z) = g (OUTR z)
@@ -465,34 +798,37 @@ Proof
   >> last_x_assum (fn thm => simp [Once thm])
 QED
 
-Theorem cheshire_run_unused_fnums_2:
-  (!st req. MEM req reqs ==> ISR (cheshire_req spi_host_read spi_host_write st req)) ==>
-  ?n st' rdatas. !fnums. (!i. i < n ==> fnums i = st.fnums i) ==>
+Theorem cheshire_run_unused_fnums:
+  cheshire_run spi_host_tick spi_host_read spi_host_write st reqs = INR (st', rdatas) ==>
+  ?n. !fnums. (!i. i < n ==> fnums i = st.fnums i) ==>
   cheshire_run spi_host_tick spi_host_read spi_host_write (st with fnums := fnums) reqs = INR (st' with fnums := (\i. fnums (i + n)), rdatas)
 Proof
   qid_spec_tac `st`
+  >> qid_spec_tac `st'`
+  >> qid_spec_tac `rdatas`
   >> Induct_on `reqs`
   >- (rpt strip_tac
-      >> qexistsl [`0`, `st`, `[]`]
-      >> simp [cheshire_run_def, SF ETA_ss])
-  >- (simp [cheshire_run_def]
-      >> rpt strip_tac
-      >> `?oracle_res. cheshire_req spi_host_read spi_host_write st h = INR oracle_res` by simp [GSYM sumExtraTheory.ISR_exists]
-      >> PairCases_on `oracle_res`
-      >> fs [spi_host_cheshire_req_fnums]
+      >> qexists `0`
+      >> fs [cheshire_run_def, SF ETA_ss])
+  >- (rpt strip_tac
+      >> fs [cheshire_run_INR_CONS, spi_host_cheshire_req_fnums]
 
-      >> strip_assume_tac $ Q.INST [`notif` |-> `oracle_res1`] spi_host_tick_unused_fnums
+      >> strip_assume_tac spi_host_tick_unused_fnums
       >> qrefine `n + m`
-      >> simp []
+      >> rfs []
+
       >> drule_then assume_tac spi_host_st_upd_fnums_fupd
       >> simp []
-      >> last_x_assum $ qspec_then `oracle_res0 (spi_host_tick oracle_res1 st)` strip_assume_tac
+      >> last_x_assum $ drule_then strip_assume_tac
       >> qexists `n'`
-      >> drule_then assume_tac unused_fnums_ignored_fnums_val
       >> drule_then assume_tac spi_host_st_upd_fnums
       >> fs []
-      >> qexistsl [`st'`, `oracle_res2::rdatas`]
-      >> simp [])
+      >> `st''.fnums = (\i. st.fnums (i + n))`
+         by (qpat_x_assum `!fnums. _ ==> spi_host_tick _ _ = _` $ qspec_then `st.fnums` assume_tac
+             >> `st with fnums := st.fnums = st` by simp [spi_host_state_component_equality]
+             >> fs []
+             >> qpat_x_assum `_ = st''` (fn thm => simp [Once (GSYM thm)]))
+      >> fs [])
 QED
 
 (* If the initial model state lines up with `spi_host_circuit_init`, and all the
@@ -508,7 +844,8 @@ Theorem spi_host_reg_top_correct:
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
       /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error)
+      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
+      /\ s''.win_buses.req = s'.win_buses.req)
   /\ (!proc fext s s'. MEM proc ffs1 ==> (proc fext s s').hw2reg = s'.hw2reg)
   /\ (!st req_m fext fbits n st_upd notif rdata.
     let
@@ -517,19 +854,19 @@ Theorem spi_host_reg_top_correct:
     spi_host_state_rel st (spi_host fext fbits n)
     /\ cheshire_req_rel req_m req_c
     /\ cheshire_req spi_host_read spi_host_write st req_m = INR (st_upd, notif, rdata)
+    /\ ISR (spi_host_tick notif st)
     /\ spi_host_hwext_notif_rel notif req_c
-    ==> ?fnums. spi_host_core_state_rel (st_upd (spi_host_tick notif (st with fnums := fnums))) (spi_host fext fbits (SUC n))
-      /\ spi_host_hw_write_rel (st with fnums := fnums).regs (spi_host_tick notif (st with fnums := fnums)).regs
-                          (spi_host fext fbits n).hw2reg)
+    ==> ?fnums. spi_host_core_state_rel (st_upd (OUTR (spi_host_tick notif (st with fnums := fnums)))) (spi_host fext fbits (SUC n))
+      /\ spi_host_hw_write_rel (st with fnums := fnums).regs (OUTR (spi_host_tick notif (st with fnums := fnums))).regs
+                          (spi_host fext fbits n).hw2reg
+      /\ ~spi_host_win_error (spi_host fext fbits n).win_buses)
 
   (* We phrase it this way instead of as spi_host_circuit_init fbits so that
    * combinational signals are set instead of being random values from fbits. *)
   /\ spi_host_state_rel st (spi_host fext fbits 0)
   /\ (!i. i < LENGTH reqs ==>
-    let
-      req = reg_req_decode (fext i).reg_req_i: 6 reg_req;
-    in
-      ~spi_host_req_error req /\ cheshire_req_rel (EL i reqs) req)
+    cheshire_req_rel (EL i reqs) (reg_req_decode (fext i).reg_req_i: 6 reg_req))
+  /\ ISR (cheshire_run spi_host_tick spi_host_read spi_host_write st reqs)
 
   ==> ?fnums. let
       (st', rdatas) = OUTR (cheshire_run spi_host_tick spi_host_read spi_host_write (st with fnums := fnums) reqs)
@@ -539,64 +876,73 @@ Theorem spi_host_reg_top_correct:
       let
         rsp = reg_rsp_decode (spi_host fext fbits i).reg_rsp_o;
       in
-        rsp.ready /\ ~rsp.error /\ (!value. EL i rdatas = SOME value ==> rsp.rdata = value))
+        (IS_SOME (EL i reqs) ==> rsp.ready /\ ~rsp.error)
+        /\ (!value. EL i rdatas = SOME value ==> rsp.rdata = value))
 Proof
   simp []
   >> rpt strip_tac
-  >> Induct_on `reqs` using listTheory.SNOC_INDUCT
-  >- (drule spi_host_reg_top_rsp_ready_error >> fs [cheshire_run_def, spi_host_state_rel_fnums])
-  >- (rpt strip_tac
+  >> (Induct_on `reqs` using listTheory.SNOC_INDUCT
+      >- fs [cheshire_run_def, spi_host_state_rel_fnums])
+  >> rpt strip_tac
 
-      (* Satisfy the assumptions for our inductive hypothesis, which will tell us the
-       * `fnums` used by `cheshire_run` up until this point. *)
-      >> `!f n. (!i. i < SUC n ==> f i) <=> (!i. i < n ==> f i) /\ f n`
-         by (rpt strip_tac
-             >> iff_tac
-             >- simp []
-             >- (rpt strip_tac >> Cases_on `i = n` >> simp []))
-      >> fs [listTheory.EL_SNOC, listTheory.EL_LENGTH_SNOC]
+  (* Satisfy the assumptions for our inductive hypothesis, which will tell us the
+   * `fnums` used by `cheshire_run` up until this point. *)
+  >> `!f n. (!i. i < SUC n ==> f i) <=> (!i. i < n ==> f i) /\ f n`
+     by (rpt strip_tac
+         >> iff_tac
+         >- simp []
+         >- (rpt strip_tac >> Cases_on `i = n` >> simp []))
+  >> drule_then assume_tac (iffRL spi_host_cheshire_run_ISR_fnums)
+  >> gs [listTheory.EL_SNOC, listTheory.EL_LENGTH_SNOC, cheshire_run_ISR_SNOC, INR_imp_ISR]
+  >> pairarg_tac
+  >> fs []
 
-      (* Show that `cheshire_run = INR _`. *)
-      >> `!st req. MEM req reqs ==> ISR (cheshire_req spi_host_read spi_host_write st req)`
-         by (simp [listTheory.MEM_EL]
-             >> rpt strip_tac
-             >> qpat_x_assum `!i. i < LENGTH reqs ==> _` $ drule_then strip_assume_tac
-             >> drule cheshire_req_spi_host_req_error
-             >> simp [Excl "NOT_ISL_ISR", GSYM sumTheory.NOT_ISL_ISR])
-      >> drule_then (qspecl_then [`spi_host_tick`, `st with fnums := fnums`] assume_tac) cheshire_run_cheshire_req_ISR
-      >> drule_then strip_assume_tac (iffLR sumExtraTheory.ISR_exists)
-      >> fs []
-      >> pairarg_tac
-      >> fs []
+  (* Then find `fnums'`, the fnums which need to follow `fnums` for the last step
+   * to keep things lining up. *)
+  >> qpat_x_assum `!fnums. ?st' rdatas st_upd notif rdata. _` $ qspec_then `fnums` strip_assume_tac
+  >> gvs []
+  >> drule_all_then strip_assume_tac spi_host_reg_top_spi_host_state_rel_step
 
-      (* Infer from `~spi_host_req_error` that `cheshire_req = INR _`, so that it can be
-       * used by `drule_all spi_host_reg_top_spi_host_state_rel_step`. *)
-      >> drule_all_then strip_assume_tac spi_host_reg_top_rsp_correct
-      >> drule_then assume_tac spi_host_reg_top_rsp_ready_error
-      >> gs []
-      >> drule_then (qx_choose_then `oracle_res` assume_tac) (iffLR sumExtraTheory.ISR_exists)
-      >> PairCases_on `oracle_res`
-      >> drule_all_then strip_assume_tac spi_host_reg_top_spi_host_state_rel_step
+  (* Now we want to use `qexists` with `fnums'` glued onto the end of `fnums`; but
+   * first, we need to find out where that end is. *)
+  >> drule_then strip_assume_tac cheshire_run_unused_fnums
+  >> fs []
+  >> qexists `\i. if i < n then fnums i else fnums' (i - n)`
 
-      (* Now we have `fnums'`, the `fnums` needed for the last step to keep things
-       * lining up, and we want to use `qexists` with `fnums'` glued onto the end of
-       * `fnums`. But first, we need to find out where that end is. *)
-      >> `!st req. MEM req reqs ==> ISR (cheshire_req spi_host_read spi_host_write st req)`
-         by (simp [listTheory.MEM_EL]
-             >> rpt strip_tac
-             >> qpat_x_assum `!i. i < LENGTH reqs ==> _` $ drule_then strip_assume_tac
-             >> drule cheshire_req_spi_host_req_error
-             >> simp [Excl "NOT_ISL_ISR", GSYM sumTheory.NOT_ISL_ISR])
-      >> drule_then (qspec_then `st with fnums := fnums` strip_assume_tac) cheshire_run_unused_fnums_2
-      >> qexists `\i. if i < n then fnums i else fnums' (i - n)`
+  (* Obtain the values of `st'` and `rdatas`. *)
+  >> simp [cheshire_run_SNOC, sum_bind_def, spi_host_cheshire_req_fnums, ETA_THM]
+  >> `?st. spi_host_tick notif' (st'' with fnums := fnums') = INR st` by simp [GSYM ISR_exists, spi_host_tick_ISR_fnums]
+  >> simp [sum_bind_def]
 
-      >> first_assum $ qspec_then `\i. if i < n then fnums i else fnums' (i - n)` assume_tac
-      (* Instantiate it a second time to prove that st'' = st'. *)
-      >> first_x_assum $ qspec_then `fnums` assume_tac
-      >> gs [cheshire_run_SNOC, spi_host_cheshire_req_fnums]
-      >> drule_then assume_tac cheshire_run_LENGTH_rdatas
-      >> first_x_assum (assume_tac o GSYM)
-      >> fs [spi_host_cheshire_req_fnums, SF ETA_ss, listTheory.EL_SNOC, listTheory.EL_LENGTH_SNOC])
+  (* Now that we've actually got all the values we're working with, we can prove
+   * the goal. *)
+  (* st -> st'' -> st_upd' st'³' *)
+  >> qpat_x_assum `!fnums'. _ => cheshire_run _ _ _ _ _ = INR _` $ qspec_then `\i. if i < n then fnums i else fnums' (i - n)` assume_tac
+  >> fs []
+
+  >> drule_then (assume_tac o GSYM) cheshire_run_LENGTH_rdatas
+  >> gs [listTheory.EL_SNOC, listTheory.EL_LENGTH_SNOC]
+
+  >> qabbrev_tac `req = reg_req_decode (fext (LENGTH rdatas')).reg_req_i: 6 reg_req`
+  >> qmatch_goalsub_abbrev_tac `rsp.ready`
+  >> conj_tac
+  >> rpt (FIRST [disch_tac, gen_tac])
+  >| [
+    `req.valid` by fs [Abbr `req`, cheshire_req_rel_def],
+    `req.valid` by (drule_then strip_assume_tac cheshire_req_INR_cases
+                    >> gvs [Abbr `req`, cheshire_req_rel_def])
+  ]
+  >> `rsp.ready`
+      by (fs [Abbr `rsp`]
+          >> drule_then irule spi_host_reg_top_rsp_ready
+          >> fs [spi_host_state_rel_def, spi_host_core_state_rel_def])
+  >> unabbrev_all_tac
+  >> drule_all_then strip_assume_tac spi_host_reg_top_rsp_correct
+  >> qmatch_asmsub_abbrev_tac `rsp.error`
+  >> `~rsp.error`
+      by (rpt strip_tac
+          >> fs [GSYM sumTheory.NOT_ISR_ISL, Excl "NOT_ISR_ISL"])
+  >> simp []
 QED
 
 val _ = export_theory ();
