@@ -91,6 +91,9 @@ Datatype:
     sda_buf : bool;
     scl_sync : bool;
     sda_sync : bool;
+
+    rx_trace: word8 list;
+    fmt_trace: 13 word list;
   |>
 End
 
@@ -224,6 +227,8 @@ Definition i2c_tick_def:
                     then [] else fmt_fifo'';
 
       fmt_fifo'''' = if st.under_rst then st.fmt_fifo else fmt_fifo''';
+      
+      fmt_trace' = if st.fsm_state = PopFmtFifo ∧ ¬NULL st.fmt_fifo ∧ ¬st.under_rst then SNOC (HD st.fmt_fifo) st.fmt_trace else st.fmt_trace;
 
       fmt_flag_start_before = (¬ NULL st.fmt_fifo ∧ word_bit 8 $ HD st.fmt_fifo);
       fmt_flag_stop_after   = (¬ NULL st.fmt_fifo ∧ word_bit 9  $ HD st.fmt_fifo);
@@ -435,6 +440,7 @@ Definition i2c_tick_def:
        * on the same clock cycle that it is inserted, and so this needs to go first so
        * that it can't see any newly-inserted values. *)
       rx_fifo' = if hwext_notif = SOME (Read rdata_read) ∧ ¬NULL st.rx_fifo then TL st.rx_fifo else st.rx_fifo;
+      rx_trace' = if hwext_notif = SOME (Read rdata_read) ∧ ¬NULL st.rx_fifo then SNOC (HD st.rx_fifo) st.rx_trace else st.rx_trace;
 
       (* The FIFO can't insert into a spot that was freed in the same clock cycle, so
        * we need to use `st.rx_fifo` rather than `rx_fifo'`. *)
@@ -537,6 +543,8 @@ Definition i2c_tick_def:
         sda_buf := word_bit 0 sda_i;
         scl_sync := st.scl_buf;
         sda_sync := st.sda_buf;
+        rx_trace := rx_trace';
+        fmt_trace := fmt_trace';
       |>
 End
 
