@@ -17,6 +17,8 @@ module spi_host_reg_top_wrapper (
     input logic rst_ni,
     input logic [85:0] reg_req_i,
     output logic [33:0] reg_rsp_o,
+    output logic [85:0][1:0] reg_req_win_o,
+    input logic [33:0][1:0] reg_rsp_win_i,
     output spi_host_reg_pkg::spi_host_reg2hw_t reg2hw,
     input spi_host_reg_pkg::spi_host_hw2reg_t hw2reg
 );
@@ -28,6 +30,8 @@ module spi_host_reg_top_wrapper (
       .rst_ni,
       .reg_req_i,
       .reg_rsp_o,
+      .reg_req_win_o,
+      .reg_rsp_win_i,
       .reg2hw,
       .hw2reg,
       .devmode_i(1)

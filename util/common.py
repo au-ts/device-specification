@@ -35,7 +35,7 @@ windows = block.windows
 # maybe we should do that instead?
 
 
-def name(x: Register | Field | Window):
+def name(x: Register | Field | MultiRegister | Window):
     return x.name.lower()
 
 
