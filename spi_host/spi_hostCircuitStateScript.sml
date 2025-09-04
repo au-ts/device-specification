@@ -5,8 +5,8 @@ val _ = new_theory "spi_hostCircuitState";
 
 Datatype:
   spi_host_circuit_ext_state = <|
-    (* 40-bit (DefaultCfg.AddrWidth) addr + 32-bit data + 4-bit strobe + 2 bits of write/valid *)
-    reg_req_i: 78 word;
+    (* 48-bit (DefaultCfg.AddrWidth) addr + 32-bit data + 4-bit strobe + 2 bits of write/valid *)
+    reg_req_i: 86 word;
 
     cio_sd_i: 4 word;
   |>
