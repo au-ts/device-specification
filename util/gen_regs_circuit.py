@@ -85,7 +85,7 @@ def reg_top_reg_qe_assns(reg: Register):
 
 
 def reg_top_window_reg_rsp_o_assn(window: Window):
-    return rf"""if {hex(window.offset)}w <=+ s'.addr /\ s'.addr <+ {hex(window.offset + window.size_in_bytes)}w then
+    return rf"""if {hex(window.offset)}w <=+ s'.raw_addr /\ s'.raw_addr <+ {hex(window.offset + window.size_in_bytes)}w then
     let
       s' = s' with reg_rsp_o := (0 :+ s'.win_buses.rsp.{name(window)}.ready) s'.reg_rsp_o;
       s' = s' with reg_rsp_o := (1 :+ s'.win_buses.rsp.{name(window)}.error) s'.reg_rsp_o;
@@ -95,7 +95,7 @@ def reg_top_window_reg_rsp_o_assn(window: Window):
 
 
 def reg_top_window_reg_req_win_assn(window: Window):
-    return rf"""if {hex(window.offset)}w <=+ s'.addr /\ s'.addr <+ {hex(window.offset + window.size_in_bytes)}w then let
+    return rf"""if {hex(window.offset)}w <=+ s'.raw_addr /\ s'.raw_addr <+ {hex(window.offset + window.size_in_bytes)}w then let
       s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with addr := (reg_req_decode fext.reg_req_i: 48 reg_req).addr;
       s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with write := (reg_req_decode fext.reg_req_i: 48 reg_req).write;
       s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wdata := (reg_req_decode fext.reg_req_i: 48 reg_req).wdata;
@@ -104,11 +104,11 @@ def reg_top_window_reg_req_win_assn(window: Window):
     in
       s'
     else let
-      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with addr := (reg_req_decode (0w: 86 word): 48 reg_req).addr;
-      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with write := (reg_req_decode (0w: 86 word): 48 reg_req).write;
-      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wdata := (reg_req_decode (0w: 86 word): 48 reg_req).wdata;
-      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wstrb := (reg_req_decode (0w: 86 word): 48 reg_req).wstrb;
-      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with valid := (reg_req_decode (0w: 86 word): 48 reg_req).valid;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with addr := 0w;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with write := F;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wdata := 0w;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wstrb := 0w;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with valid := F;
     in
       s'"""
 
@@ -187,6 +187,16 @@ val {ip.name}_reg2hw_init_tm = ``
         return f"val {ip.name}_reg2hw_init_tm = ``ARB: {ip.name}_reg2hw``;"
 
 
+def not_window_exp():
+    if len(windows) == 0:
+        return "T"
+    else:
+        return r" /\ ".join(
+            rf"~({hex(window.offset)}w <=+ s'.raw_addr /\ s'.raw_addr <+ {hex(window.offset + window.size_in_bytes)}w)"
+            for window in windows
+        )
+
+
 comms = [
     f'"regs_{name(reg)}_{name(field)}"'
     for reg in regs
@@ -211,11 +221,25 @@ open {ip.name}CircuitStateTheory {ip.name}RegsTheory {ip.name}RegsCommTheory;
  * let `{ip.name}CircuitTheory` make the actual definitions. *)
 val {ip.name}_reg_top_comb_1_tm = ``
   let
-    s' = s' with addr := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).addr;
-    s' = s' with write := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).write;
-    s' = s' with wdata := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).wdata;
-    s' = s' with wstrb := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).wstrb;
-    s' = s' with valid := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).valid;
+    s' = s' with raw_addr := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).addr;
+    s' = if {not_window_exp()} then
+      let
+        s' = s' with addr := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).addr;
+        s' = s' with write := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).write;
+        s' = s' with wdata := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).wdata;
+        s' = s' with wstrb := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).wstrb;
+        s' = s' with valid := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).valid;
+      in
+        s'
+    else
+      let
+        s' = s' with addr := 0w;
+        s' = s' with write := F;
+        s' = s' with wdata := 0w;
+        s' = s' with wstrb := 0w;
+        s' = s' with valid := F;
+      in
+        s';
 
     s' = case s'.addr of
       {"\n    | ".join(reg_top_error_case(reg) for reg in regs)}

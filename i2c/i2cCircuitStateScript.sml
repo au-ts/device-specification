@@ -53,6 +53,7 @@ Datatype:
     win_buses: i2c_win_buses;
 
     (* The decoded fields of `reg_req_i`. *)
+    raw_addr: word7;
     addr: word7;
     write: bool;
     wdata: word32;

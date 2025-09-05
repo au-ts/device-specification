@@ -12,10 +12,9 @@ sim -w -vcd reset.vcd -clock clk_i -resetn rst_ni -rstlen 2 -n 1
 
 [strategy sby]
 use sby
-depth 1
-# bitwuzla seems to be the most common, but yosys expects an ancient version I
-# can't be bothered to get working.
-engine smtbmc yices
+# k-induction seems to be failing to incorporate the two circuits' registers
+# being equal into its inductive hypothesis.
+engine abc pdr
 
 [collect *]
 # https://github.com/YosysHQ/eqy/issues/47

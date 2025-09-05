@@ -27,14 +27,14 @@ multireg_field_re = "|".join(
     name(field) for reg in block.multiregs for field in reg.reg.fields
 )
 input = re.sub(
-    rf"(reg2hw|hw2reg)_({multireg_re})_(\d*)_({multireg_field_re})_(d|de|q|qe|re)",
+    rf"(reg2hw|hw2reg)_({multireg_re})_(\d*)_({multireg_field_re})_\d*_(d|de|q|qe|re)",
     r"\1.\2[\3].\4.\5",
     input,
 )
 
 homomultireg_re = "|".join(name(reg) for reg in block.multiregs if reg.is_homogeneous())
 input = re.sub(
-    rf"(reg2hw|hw2reg)_({multireg_re})_(\d*)_({multireg_field_re})_(d|de|q|qe|re)",
+    rf"(reg2hw|hw2reg)_({multireg_re})_(\d*)_({multireg_field_re})_\d*_(d|de|q|qe|re)",
     r"\1.\2[\3].\5",
     input,
 )

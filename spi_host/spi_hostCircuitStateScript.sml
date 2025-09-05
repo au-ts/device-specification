@@ -43,6 +43,7 @@ Datatype:
     win_buses: spi_host_win_buses;
 
     (* The decoded fields of `reg_req_i`. *)
+    raw_addr: word6;
     addr: word6;
     write: bool;
     wdata: word32;
