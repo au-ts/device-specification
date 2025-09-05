@@ -308,12 +308,20 @@ fun COND_RECORD_CONV tm = DEPTH_CONV (fn tm =>
   end else
     raise UNCHANGED) tm
 
+Triviality COND_reg_req_decode:
+  (if c then f (reg_req_decode x) else f (reg_req_decode y)) = f (reg_req_decode (if c then x else y))
+Proof
+  simp [COND_RAND]
+QED
+
 Theorem i2c_reg_top_comb_1_flat = i2c_reg_top_comb_1_def
-  |> SRULE [COND_ARG1_K, COND_ARG1]
-  |> SRULE [Ntimes LET_THM 5]
-  |> SRULE [SRULE [] (GSYM i2c_req_error_alt), SF boolSimps.LET_ss]
+  |> CONV_RULE (DEPTH_CONV (fn tm => if is_cond tm then SCONV [SF boolSimps.LET_ss] tm else ALL_CONV tm))
   |> CONV_RULE COND_RECORD_CONV
-  |> SRULE [];
+  |> SRULE [COND_reg_req_decode]
+  |> SRULE [Ntimes LET_THM 2, SRULE [] (GSYM i2c_req_error_alt)]
+  |> SRULE [WORD_LO, WORD_LS, GSYM i2c_win_addr_def, GSYM COND_reg_req_decode, Q.ISPEC `0w: 86 word` reg_req_decode_def]
+  |> CONV_RULE (DEPTH_CONV (fn tm => if is_comb tm andalso same_const (fst (dest_comb tm)) ``i2c_req_error`` andalso is_record (snd (dest_comb tm)) then SCONV [i2c_req_error_def] tm else ALL_CONV tm))
+  |> SRULE [SF boolSimps.LET_ss];
 
 Theorem i2c_reg_top_comb_2_flat = i2c_reg_top_comb_2_def
   |> SRULE [SF boolSimps.LET_ss, COND_ARG1_K]
@@ -395,11 +403,16 @@ Theorem i2c_basic_signals_inner:
       s'' = proc fext s s'
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
-      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
-      /\ s''.win_buses.req = s'.win_buses.req)
-  ==> s'.addr = req.addr /\ s'.write = req.write /\ s'.wdata = req.wdata
-    /\ s'.wstrb = req.wstrb /\ s'.valid = req.valid /\ s'.error = i2c_req_error req
+      /\ s''.raw_addr = s'.raw_addr /\ s''.addr = s'.addr /\ s''.write = s'.write
+      /\ s''.wdata = s'.wdata /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid
+      /\ s''.error = s'.error /\ s''.win_buses.req = s'.win_buses.req)
+  ==> s'.raw_addr = req.addr
+    /\ s'.addr = (if i2c_win_addr (w2n req.addr) then 0w else req.addr)
+    /\ s'.write = (~i2c_win_addr (w2n req.addr) /\ req.write)
+    /\ s'.wstrb = (if i2c_win_addr (w2n req.addr) then 0w else req.wstrb)
+    /\ s'.wdata = (if i2c_win_addr (w2n req.addr) then 0w else req.wdata)
+    /\ s'.valid = (~i2c_win_addr (w2n req.addr) /\ req.valid)
+    /\ s'.error = (~i2c_win_addr (w2n req.addr) /\ i2c_req_error req)
 Proof
   qpat_abbrev_tac `sstep = procs (_ ++ ffs2)`
   >> qpat_abbrev_tac `cstep = procs (_ ++ [i2c_reg_top_comb_2])`
@@ -409,6 +422,7 @@ Proof
   >> simp [procs_append, procs_def, i2c_reg_top_comb_2_flat, reg_rsp_decode_def, word_bit_bit_field_insert]
   >> simp [word_bit_def, FCP_APPLY_UPDATE_THM_2]
   >> simp [procs_unchanged, i2c_reg_top_comb_1_flat]
+  >> simp [i2c_win_addr_def]
 QED
 
 Theorem i2c_basic_signals = SRULE [SF boolSimps.LET_ss] i2c_basic_signals_inner;
@@ -424,9 +438,9 @@ Theorem i2c_reg_top_i2c_read_inner:
       s'' = proc fext s s'
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
-      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
-      /\ s''.win_buses.req = s'.win_buses.req)
+      /\ s''.raw_addr = s'.raw_addr /\ s''.addr = s'.addr /\ s''.write = s'.write
+      /\ s''.wdata = s'.wdata /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid
+      /\ s''.error = s'.error /\ s''.win_buses.req = s'.win_buses.req)
   /\ i2c_state_rel st (i2c fext fbits n)
   /\ cheshire_req_rel (SOME (nb, offset, NONE)) req
   /\ ~rsp.error
@@ -448,13 +462,13 @@ Proof
   >> gs [i2c_reg_top_comb_2_flat, procs_unchanged, reg_rsp_decode_def, word_extract_bit_field_insert, word_bit_bit_field_insert]
   >> fs [word_bit_def, FCP_APPLY_UPDATE_THM_2]
   >> qabbrev_tac `s'' = procs combs (fext n) s' (i2c_reg_top_comb_1 (fext n) s' s')`
-  >> fs [i2c_reg_top_comb_1_flat]
-  >> qmatch_asmsub_abbrev_tac `req.valid`
+  >> gs [i2c_reg_top_comb_1_flat]
+  >> qmatch_goalsub_abbrev_tac `req.addr`
   >> rpt (IF_CASES_TAC
-          >- (gs [WORD_LS, WORD_LO, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0"]
+          >- (gs [i2c_win_addr_def, WORD_LS, WORD_LO, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0"]
               >> simp [i2c_read_def, Excl "w2n_eq_0"]
               >> rfs [Abbr `req`, reg_req_decode_def, WORD_EXTRACT_COMP_THM]))
-  >> full_simp_tac std_ss [WORD_LS, WORD_LO, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0", dimword_def, dimindex_7]
+  >> full_simp_tac std_ss [i2c_win_addr_def, WORD_LS, WORD_LO, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0", dimword_def, dimindex_7, bool_case_eq, w2n_n2w]
   >> asm_simp_tac std_ss [i2c_read_def, Excl "w2n_eq_0"]
   >> full_simp_tac std_ss [i2c_req_error_def, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0", dimword_def, dimindex_7]
 QED
@@ -546,9 +560,9 @@ Theorem i2c_reg_top_rsp_ready_inner:
       s'' = proc fext s s'
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
-      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
-      /\ s''.win_buses.req = s'.win_buses.req)
+      /\ s''.raw_addr = s'.raw_addr /\ s''.addr = s'.addr /\ s''.write = s'.write
+      /\ s''.wdata = s'.wdata /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid
+      /\ s''.error = s'.error /\ s''.win_buses.req = s'.win_buses.req)
   /\ i2c_win_ready (i2c fext fbits n).win_buses
   /\ req.valid
   ==> rsp.ready
@@ -579,9 +593,9 @@ Theorem i2c_reg_top_rsp_error_inner:
       s'' = proc fext s s'
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
-      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
-      /\ s''.win_buses.req = s'.win_buses.req)
+      /\ s''.raw_addr = s'.raw_addr /\ s''.addr = s'.addr /\ s''.write = s'.write
+      /\ s''.wdata = s'.wdata /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid
+      /\ s''.error = s'.error /\ s''.win_buses.req = s'.win_buses.req)
   /\ req.valid
   /\ rsp.ready
   ==> (rsp.error <=> i2c_req_error req /\ ~i2c_win_addr (w2n req.addr) \/ i2c_win_error (i2c fext fbits n).win_buses)
@@ -596,7 +610,7 @@ Proof
   >> fs [procs_append, procs_def, i2c_reg_top_comb_2_flat, word_bit_bit_field_insert]
   >> gs [word_bit_def, FCP_APPLY_UPDATE_THM_2, procs_unchanged]
   >> qabbrev_tac `s'' = procs combs (fext n) s' (i2c_reg_top_comb_1 (fext n) s' s')`
-  >> fs [i2c_reg_top_comb_1_flat, reg_req_decode_def, word_bit_def, WORD_LO, WORD_LS]
+  >> fs [i2c_reg_top_comb_1_flat, reg_req_decode_def, word_bit_def, i2c_win_addr_def, WORD_LO, WORD_LS]
   >> rpt IF_CASES_TAC
   >> gs [i2c_req_error_def]
 QED
@@ -653,9 +667,9 @@ Theorem i2c_reg_top_rsp_correct_inner:
       s'' = proc fext s s'
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
-      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
-      /\ s''.win_buses.req = s'.win_buses.req)
+      /\ s''.raw_addr = s'.raw_addr /\ s''.addr = s'.addr /\ s''.write = s'.write
+      /\ s''.wdata = s'.wdata /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid
+      /\ s''.error = s'.error /\ s''.win_buses.req = s'.win_buses.req)
   /\ (!st req_m fext fbits n st_upd notif rdata.
     let
       req_c = reg_req_decode (fext n).reg_req_i: 7 reg_req
@@ -721,9 +735,9 @@ Theorem i2c_reg_top_i2c_state_rel_step_inner:
       s'' = proc fext s s'
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
-      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
-      /\ s''.win_buses.req = s'.win_buses.req)
+      /\ s''.raw_addr = s'.raw_addr /\ s''.addr = s'.addr /\ s''.write = s'.write
+      /\ s''.wdata = s'.wdata /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid
+      /\ s''.error = s'.error /\ s''.win_buses.req = s'.win_buses.req)
   (* Not strictly a requirement, but makes this easier to state (we don't have to
    * add an i2c_reg_top_ff into the i2c_hw_write_rel condition).
    *
@@ -893,9 +907,9 @@ Theorem i2c_reg_top_correct:
       s'' = proc fext s s'
     in
       s''.reg2hw = s'.reg2hw /\ s''.regs = s'.regs /\ s''.reg_rsp_o = s'.reg_rsp_o
-      /\ s''.addr = s'.addr /\ s''.write = s'.write /\ s''.wdata = s'.wdata
-      /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid /\ s''.error = s'.error
-      /\ s''.win_buses.req = s'.win_buses.req)
+      /\ s''.raw_addr = s'.raw_addr /\ s''.addr = s'.addr /\ s''.write = s'.write
+      /\ s''.wdata = s'.wdata /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid
+      /\ s''.error = s'.error /\ s''.win_buses.req = s'.win_buses.req)
   /\ (!proc fext s s'. MEM proc ffs1 ==> (proc fext s s').hw2reg = s'.hw2reg)
   /\ (!st req_m fext fbits n st_upd notif rdata.
     let

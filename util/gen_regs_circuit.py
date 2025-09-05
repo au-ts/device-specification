@@ -187,12 +187,12 @@ val {ip.name}_reg2hw_init_tm = ``
         return f"val {ip.name}_reg2hw_init_tm = ``ARB: {ip.name}_reg2hw``;"
 
 
-def not_window_exp():
+def window_addr_exp():
     if len(windows) == 0:
-        return "T"
+        return "F"
     else:
-        return r" /\ ".join(
-            rf"~({hex(window.offset)}w <=+ s'.raw_addr /\ s'.raw_addr <+ {hex(window.offset + window.size_in_bytes)}w)"
+        return r" \/ ".join(
+            rf"{hex(window.offset)}w <=+ s'.raw_addr /\ s'.raw_addr <+ {hex(window.offset + window.size_in_bytes)}w"
             for window in windows
         )
 
@@ -222,22 +222,22 @@ open {ip.name}CircuitStateTheory {ip.name}RegsTheory {ip.name}RegsCommTheory;
 val {ip.name}_reg_top_comb_1_tm = ``
   let
     s' = s' with raw_addr := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).addr;
-    s' = if {not_window_exp()} then
+    s' = if {window_addr_exp()} then
+      let
+        s' = s' with addr := (reg_req_decode (0w: 86 word): {addr_width} reg_req).addr;
+        s' = s' with write := (reg_req_decode (0w: 86 word): {addr_width} reg_req).write;
+        s' = s' with wdata := (reg_req_decode (0w: 86 word): {addr_width} reg_req).wdata;
+        s' = s' with wstrb := (reg_req_decode (0w: 86 word): {addr_width} reg_req).wstrb;
+        s' = s' with valid := (reg_req_decode (0w: 86 word): {addr_width} reg_req).valid;
+      in
+        s'
+    else
       let
         s' = s' with addr := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).addr;
         s' = s' with write := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).write;
         s' = s' with wdata := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).wdata;
         s' = s' with wstrb := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).wstrb;
         s' = s' with valid := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).valid;
-      in
-        s'
-    else
-      let
-        s' = s' with addr := 0w;
-        s' = s' with write := F;
-        s' = s' with wdata := 0w;
-        s' = s' with wstrb := 0w;
-        s' = s' with valid := F;
       in
         s';
 
