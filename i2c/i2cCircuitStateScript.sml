@@ -50,20 +50,35 @@ Datatype:
      * same as the ones in real hardware). *)
     reg2hw: i2c_reg2hw;
     hw2reg: i2c_hw2reg;
+    win_buses: i2c_win_buses;
 
     (* The decoded fields of `reg_req_i`. *)
+    raw_addr: word7;
     addr: word7;
     write: bool;
     wdata: word32;
     wstrb: word4;
     valid: bool;
+    (* `reg_rsp_o.error`, if it's being determined by us and not by a window. *)
+    error: bool;
   |>
 End
 
 Definition i2c_core_state_rel_def:
   (* mstate = model state, cstate = circuit state *)
-  i2c_core_state_rel (mstate: i2c_state) (cstate: i2c_circuit_state) =
-    i2c_hwext_read_rel mstate cstate.hw2reg
+  i2c_core_state_rel (mstate: i2c_state) (cstate: i2c_circuit_state) <=>
+    i2c_hwext_read_rel mstate cstate.hw2reg /\
+    i2c_win_read_rel mstate cstate.win_buses /\
+    (* We shouldn't really be assuming this: it's true for I2C and SPI, but in
+     * general it should be perfectly fine for an access to take more than 1 cycle
+     * to complete.
+     *
+     * Right now, though, the structure of our model assumes that an access will
+     * never take more than one cycle, and I don't want to deal with fixing that
+     * just yet; besides, much of the work of fixing this would go towards Cheshire-
+     * specific code, when I don't think it's likely that we're going to find a
+     * Cheshire peripheral which doesn't respond immediately. *)
+    i2c_win_ready cstate.win_buses
 End
 
 Definition i2c_state_rel_def:
@@ -77,7 +92,7 @@ Theorem i2c_state_rel_fnums:
   i2c_state_rel (st with fnums := fnums) = i2c_state_rel st
 Proof
   irule EQ_EXT
-  >> simp [i2c_state_rel_def, i2c_notif_rel_def, i2c_core_state_rel_def, i2c_hwext_read_rel_def]
+  >> simp [i2c_state_rel_def, i2c_notif_rel_def, i2c_core_state_rel_def, i2c_hwext_read_rel_def, i2c_win_read_rel_def]
   >> simp [i2c_get_status_fmtfull_def, i2c_get_status_rxfull_def, i2c_get_status_fmtempty_def, i2c_get_status_hostidle_def, i2c_get_status_targetidle_def, i2c_get_status_rxempty_def, i2c_get_status_txfull_def, i2c_get_status_acqfull_def, i2c_get_status_txempty_def, i2c_get_status_acqempty_def, i2c_get_rdata_rdata_def, i2c_get_fifo_status_fmtlvl_def, i2c_get_fifo_status_txlvl_def, i2c_get_fifo_status_rxlvl_def, i2c_get_fifo_status_acqlvl_def, i2c_get_val_scl_rx_def, i2c_get_val_sda_rx_def, i2c_get_acqdata_abyte_def, i2c_get_acqdata_signal_def]
 QED
 

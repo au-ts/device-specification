@@ -4,8 +4,9 @@ from math import ceil
 # Set PYTHONPATH=${register_interface}/vendor/lowrisc_opentitan/util for these imports to work.
 from reggen.field import Field
 from reggen.register import Register
+from reggen.window import Window
 
-from .common import block, ip, name, new_field_value, reg_value
+from .common import addr_width, ip, name, new_field_value, reg_value, regs, windows
 
 
 def hw_field_value(reg: Register, field: Field):
@@ -26,13 +27,12 @@ def reg_top_field_hwext_qe_re_assns(reg: Register, field: Field):
     # TODO: this is probably wrong for ro fields with hwqe/hwre set.
     assns = []
     if field.hwqe:
-        # word_bit 1 s'.reg_rsp_o is reg_rsp_o.error.
         assns.append(
-            rf"{name(field)}_qe := (s'.addr = {hex(reg.offset)}w /\ s'.valid /\ s'.write /\ ~(word_bit 1 s'.reg_rsp_o));"
+            rf"{name(field)}_qe := (s'.addr = {hex(reg.offset)}w /\ s'.valid /\ s'.write /\ ~s'.error);"
         )
     if field.hwre:
         assns.append(
-            rf"{name(field)}_re := (s'.addr = {hex(reg.offset)}w /\ s'.valid /\ ~s'.write /\ ~(word_bit 1 s'.reg_rsp_o));"
+            rf"{name(field)}_re := (s'.addr = {hex(reg.offset)}w /\ s'.valid /\ ~s'.write /\ ~s'.error);"
         )
     return assns
 
@@ -74,7 +74,7 @@ def reg_top_reg_q_assns(reg: Register):
 
 def reg_top_field_qe_assn(reg: Register, field: Field):
     # TODO: this is probably wrong for ro fields with hwqe set.
-    return rf"""{name(field)}_qe := (s'.addr = {hex(reg.offset)}w /\ s'.valid /\ s'.write /\ ~(word_bit 1 s'.reg_rsp_o));"""
+    return rf"""{name(field)}_qe := (s'.addr = {hex(reg.offset)}w /\ s'.valid /\ s'.write /\ ~s'.error);"""
 
 
 def reg_top_reg_qe_assns(reg: Register):
@@ -82,6 +82,35 @@ def reg_top_reg_qe_assns(reg: Register):
         f"{name(reg)} := s'.reg2hw.{name(reg)} with {reg_top_field_qe_assn(reg, field)}"
         for field in reg.fields
     )
+
+
+def reg_top_window_reg_rsp_o_assn(window: Window):
+    return rf"""if {hex(window.offset)}w <=+ s'.raw_addr /\ s'.raw_addr <+ {hex(window.offset + window.size_in_bytes)}w then
+    let
+      s' = s' with reg_rsp_o := (0 :+ s'.win_buses.rsp.{name(window)}.ready) s'.reg_rsp_o;
+      s' = s' with reg_rsp_o := (1 :+ s'.win_buses.rsp.{name(window)}.error) s'.reg_rsp_o;
+      s' = s' with reg_rsp_o := bit_field_insert 33 2 s'.win_buses.rsp.{name(window)}.rdata s'.reg_rsp_o;
+    in
+      s'"""
+
+
+def reg_top_window_reg_req_win_assn(window: Window):
+    return rf"""if {hex(window.offset)}w <=+ s'.raw_addr /\ s'.raw_addr <+ {hex(window.offset + window.size_in_bytes)}w then let
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with addr := (reg_req_decode fext.reg_req_i: 48 reg_req).addr;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with write := (reg_req_decode fext.reg_req_i: 48 reg_req).write;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wdata := (reg_req_decode fext.reg_req_i: 48 reg_req).wdata;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wstrb := (reg_req_decode fext.reg_req_i: 48 reg_req).wstrb;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with valid := (reg_req_decode fext.reg_req_i: 48 reg_req).valid;
+    in
+      s'
+    else let
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with addr := 0w;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with write := F;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wdata := 0w;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with wstrb := 0w;
+      s' = s' with win_buses := s'.win_buses with req := s'.win_buses.req with {name(window)} := s'.win_buses.req.{name(window)} with valid := F;
+    in
+      s'"""
 
 
 def reg_top_field_assn(reg: Register, field: Field):
@@ -108,7 +137,7 @@ def reg_top_field_assn(reg: Register, field: Field):
     if field.swaccess.allows_write():
         # field_value is only used in the case of rw1c, so we don't have to worry about
         # rw1c_field_value not making sense in the other cases.
-        return rf"""s' = if s'.addr = {hex(reg.offset)}w /\ s'.valid /\ s'.write /\ ~(word_bit 1 s'.reg_rsp_o) then
+        return rf"""s' = if s'.addr = {hex(reg.offset)}w /\ s'.valid /\ s'.write /\ ~s'.error then
       s' with regs := s'.regs with {name(reg)} := s'.regs.{name(reg)} with {name(field)} := {new_field_value(reg, field, "s'.wdata", rw1c_field_value)}
     else{hw_if};"""
     else:
@@ -117,7 +146,7 @@ def reg_top_field_assn(reg: Register, field: Field):
 
 def reg_top_error_case(reg: Register):
     min_bytes = ceil(reg.get_width() / 8)
-    return rf"{hex(reg.offset)}w => s' with reg_rsp_o := (1 :+ s'.valid /\ s'.write /\ (({min_bytes - 1} >< 0) s'.wstrb: {min_bytes} word) <> {(1 << min_bytes) - 1}w) s'.reg_rsp_o"
+    return rf"{hex(reg.offset)}w => s' with error := (s'.valid /\ s'.write /\ (({min_bytes - 1} >< 0) s'.wstrb: {min_bytes} word) <> {(1 << min_bytes) - 1}w)"
 
 
 def reg_init(reg: Register):
@@ -127,20 +156,55 @@ def reg_init(reg: Register):
     |>"""
 
 
+def regs_init():
+    if any(not reg.hwext for reg in regs):
+        return f"""\
+val {ip.name}_regs_init_tm = ``
+  (<|
+    {"\n    ".join(f"{name(reg)} := {reg_init(reg)};" for reg in regs if not reg.hwext)}
+  |>): {ip.name}_regs
+``;"""
+    else:
+        return f"val {ip.name}_regs_init_tm = ``ARB: {ip.name}_regs``;"
+
+
 def reg2hw_reg_init(reg: Register):
     return f"""<|
       {"\n      ".join(f"{name(field)}_qe := F;" for field in reg.fields if field.hwqe)}
     |>"""
 
 
+def reg2hw_init():
+    if any(not reg.hwext and reg.hwqe for reg in regs):
+        return f"""\
+val {ip.name}_reg2hw_init_tm = ``
+  (<|
+    {"\n    ".join(f"{name(reg)} := {reg2hw_reg_init(reg)};" for reg in regs if not reg.hwext and reg.hwqe)}
+  |>): {ip.name}_reg2hw
+``;
+"""
+    else:
+        return f"val {ip.name}_reg2hw_init_tm = ``ARB: {ip.name}_reg2hw``;"
+
+
+def window_addr_exp():
+    if len(windows) == 0:
+        return "F"
+    else:
+        return r" \/ ".join(
+            rf"{hex(window.offset)}w <=+ s'.raw_addr /\ s'.raw_addr <+ {hex(window.offset + window.size_in_bytes)}w"
+            for window in windows
+        )
+
+
 comms = [
     f'"regs_{name(reg)}_{name(field)}"'
-    for reg in block.entries
+    for reg in regs
     for field in reg.fields
     if not reg.hwext
 ] + [
     f'"reg2hw_{name(reg)}_{name(field)}_qe"'
-    for reg in block.entries
+    for reg in regs
     for field in reg.fields
     if field.hwqe and not reg.hwext
 ]
@@ -154,60 +218,73 @@ open {ip.name}CircuitStateTheory {ip.name}RegsTheory {ip.name}RegsCommTheory;
 
 (* The translator will only look for processes in the same theory as the
  * top-level `mk_module`, so we just export the bodies of these functions and
- * let `i2cCircuitTheory` make the actual definitions. *)
+ * let `{ip.name}CircuitTheory` make the actual definitions. *)
 val {ip.name}_reg_top_comb_1_tm = ``
   let
-    s' = s' with addr := (reg_req_decode fext.reg_req_i: 7 reg_req).addr;
-    s' = s' with write := (reg_req_decode fext.reg_req_i: 7 reg_req).write;
-    s' = s' with wdata := (reg_req_decode fext.reg_req_i: 7 reg_req).wdata;
-    s' = s' with wstrb := (reg_req_decode fext.reg_req_i: 7 reg_req).wstrb;
-    s' = s' with valid := (reg_req_decode fext.reg_req_i: 7 reg_req).valid;
+    s' = s' with raw_addr := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).addr;
+    s' = if {window_addr_exp()} then
+      let
+        s' = s' with addr := (reg_req_decode (0w: 86 word): {addr_width} reg_req).addr;
+        s' = s' with write := (reg_req_decode (0w: 86 word): {addr_width} reg_req).write;
+        s' = s' with wdata := (reg_req_decode (0w: 86 word): {addr_width} reg_req).wdata;
+        s' = s' with wstrb := (reg_req_decode (0w: 86 word): {addr_width} reg_req).wstrb;
+        s' = s' with valid := (reg_req_decode (0w: 86 word): {addr_width} reg_req).valid;
+      in
+        s'
+    else
+      let
+        s' = s' with addr := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).addr;
+        s' = s' with write := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).write;
+        s' = s' with wdata := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).wdata;
+        s' = s' with wstrb := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).wstrb;
+        s' = s' with valid := (reg_req_decode fext.reg_req_i: {addr_width} reg_req).valid;
+      in
+        s';
 
     s' = case s'.addr of
-      {"\n    | ".join(reg_top_error_case(reg) for reg in block.entries)}
-    | _ => s' with reg_rsp_o := (1 :+ s'.valid) s'.reg_rsp_o;
-    s' = s' with reg_rsp_o := (0 :+ T) s'.reg_rsp_o;
+      {"\n    | ".join(reg_top_error_case(reg) for reg in regs)}
+    | _ => s' with error := s'.valid;
 
-    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_q_assns(reg) if not reg.hwext and reg.hwaccess.allows_read())}
+    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in regs for assn in reg_top_reg_q_assns(reg) if not reg.hwext and reg.hwaccess.allows_read())}
 
-    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_hwext_q_assns(reg) if reg.hwext and reg.hwaccess.allows_read())}
+    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in regs for assn in reg_top_reg_hwext_q_assns(reg) if reg.hwext and reg.hwaccess.allows_read())}
 
-    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_hwext_qe_re_assns(reg) if reg.hwext and (reg.hwqe or reg.hwre))}
+    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in regs for assn in reg_top_reg_hwext_qe_re_assns(reg) if reg.hwext and (reg.hwqe or reg.hwre))}
+
+    {"\n    ".join(f"s' = {reg_top_window_reg_req_win_assn(window)};" for window in windows)}
   in
     s'
 ``
 
 val {ip.name}_reg_top_comb_2_tm = ``
-  case s'.addr of
-    (* TODO: this won't produce the prettiest Verilog. To do that, we'd need to turn
-     * this into a let..in with an assignment for each field of the register, but
-     * that would make sharing code with the HOL version more annoying.
-     *
-     * Alternatively, using @@ would be a lot less ugly than this. *)
-    {"\n  | ".join(f"{hex(reg.offset)}w => s' with reg_rsp_o := bit_field_insert 33 2 ({reg_value(reg, hw_field_value)}: word32) s'.reg_rsp_o" for reg in block.entries)}
-  | _ => s' with reg_rsp_o := bit_field_insert 33 2 (0xffffffffw: word32) s'.reg_rsp_o
+  {" ".join(reg_top_window_reg_rsp_o_assn(window) + "\n  else" for window in windows)}
+    let
+      s' = s' with reg_rsp_o := (0 :+ T) s'.reg_rsp_o;
+      s' = s' with reg_rsp_o := (1 :+ s'.error) s'.reg_rsp_o;
+      s' = case s'.addr of
+        (* TODO: this won't produce the prettiest Verilog. To do that, we'd need to turn
+         * this into a let..in with an assignment for each field of the register, but
+         * that would make sharing code with the HOL version more annoying.
+         *
+         * Alternatively, using @@ would be a lot less ugly than this. *)
+        {"\n      | ".join(f"{hex(reg.offset)}w => s' with reg_rsp_o := bit_field_insert 33 2 ({reg_value(reg, hw_field_value)}: word32) s'.reg_rsp_o" for reg in regs)}
+      | _ => s' with reg_rsp_o := bit_field_insert 33 2 (0xffffffffw: word32) s'.reg_rsp_o;
+    in
+      s'
 ``
 
 val {ip.name}_reg_top_ff_tm = ``
   let
-    {"\n    ".join(reg_top_field_assn(reg, field) for reg in block.entries for field in reg.fields if not reg.hwext and (field.swaccess.allows_write() or field.hwaccess.allows_write()))}
+    {"\n    ".join(reg_top_field_assn(reg, field) for reg in regs for field in reg.fields if not reg.hwext and (field.swaccess.allows_write() or field.hwaccess.allows_write()))}
 
-    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in block.entries for assn in reg_top_reg_qe_assns(reg) if not reg.hwext and reg.hwqe)}
+    {"\n    ".join(f"s' = s' with reg2hw := s'.reg2hw with {assn}" for reg in regs for assn in reg_top_reg_qe_assns(reg) if not reg.hwext and reg.hwqe)}
   in
     s'
 ``
 
-val {ip.name}_regs_init_tm = ``
-  (<|
-    {"\n    ".join(f"{name(reg)} := {reg_init(reg)};" for reg in block.entries if not reg.hwext)}
-  |>): i2c_regs
-``;
+{regs_init()}
 
-val {ip.name}_reg2hw_init_tm = ``
-  (<|
-    {"\n    ".join(f"{name(reg)} := {reg2hw_reg_init(reg)};" for reg in block.entries if not reg.hwext and reg.hwqe)}
-  |>): i2c_reg2hw
-``;
+{reg2hw_init()}
 
 val {ip.name}_reg_comms = [{", ".join(comms)}];
 

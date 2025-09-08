@@ -46,7 +46,8 @@ i2c_reg_top.v: i2c_reg_top_wrapper.sv
 	sv2v \
 	    $(CHESHIRE_INC) \
 		$(OPENTITAN_PERIPHERALS)/src/i2c/rtl/i2c_reg_*.sv \
-		$(REGISTER_INTERFACE)/{src/reg_intf.sv,vendor/lowrisc_opentitan/src/*.sv} \
+		$(REGISTER_INTERFACE)/src/reg_intf.sv \
+		$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/src/*.sv \
 		i2c_reg_top_wrapper.sv \
 		--write=i2c_reg_top.v --top=i2c_reg_top_wrapper
 

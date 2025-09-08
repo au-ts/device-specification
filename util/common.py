@@ -4,7 +4,9 @@ from typing import Callable
 # Set PYTHONPATH=${register_interface}/vendor/lowrisc_opentitan/util for these imports to work.
 from reggen.field import Field
 from reggen.ip_block import IpBlock
+from reggen.multi_register import MultiRegister
 from reggen.register import Register
+from reggen.window import Window
 
 ip = IpBlock.from_path(sys.argv[1], [])
 # Currently we assume that registers are always 32-bit, so that we can store the
@@ -13,6 +15,19 @@ assert ip.regwidth == 32
 
 # Assume there's only 1 block for now.
 (block,) = ip.reg_blocks.values()
+addr_width = block.get_addr_width()
+entries: list[Register | Window] = []
+for entry in block.entries:
+    if isinstance(entry, Register):
+        entries.append(entry)
+    elif isinstance(entry, MultiRegister):
+        entries.extend(entry.regs)
+    elif isinstance(entry, Window):
+        entries.append(entry)
+    else:
+        raise NotImplementedError("unsupported entry in memory map")
+regs = block.flat_regs
+windows = block.windows
 
 # TODO: use bool for single-bit registers instead of word1
 
@@ -20,7 +35,7 @@ assert ip.regwidth == 32
 # maybe we should do that instead?
 
 
-def name(x):
+def name(x: Register | Field | MultiRegister | Window):
     return x.name.lower()
 
 

@@ -1,6 +1,7 @@
 .HOLMK
 .hollogs
 .holobjs
+.hol
 
 *Theory.sig
 
@@ -9,3 +10,5 @@ __pycache__
 *~
 \#*\#
 .hol-vscode
+.venv
+.vscode
