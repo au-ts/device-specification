@@ -14,6 +14,99 @@ Datatype:
 End
 
 Datatype:
+  i2c_delay = <|
+    setup_start: 20 word;
+    hold_start: 20 word;
+    setup_data: 20 word;
+    clock_start: 20 word;
+    clock_low: 20 word;
+    clock_pulse: 20 word;
+    hold_bit: 20 word;
+    clock_stop: 20 word;
+    setup_stop: 20 word;
+    hold_stop: 20 word;
+  |>
+End
+
+Datatype:
+  counter = <|
+    wptr_wrap : bool ;
+    wptr_wrap_cnt : 7 word;
+    rptr_wrap : bool;
+    rptr_wrap_cnt : 7 word;
+  |>
+End
+
+(*
+* This record is basically the same with the record `counter` above.
+* This is a hack to circumvent the limitation of the translator framework.
+*
+* The problem is that creating an identifier for a signal structured in a record
+* only look up to one level only. Hence if the record `fifo` and `fifo2` each
+* has the field `counter`, the name of the signal `wptr_wrap_cnt` (member of the
+* record `counter`) would be `counter_wptr_wrap_cnt` and one cannot distinguish
+* whether it belongs to `fifo` or `fifo2` anymore.
+*)
+
+Datatype:
+  counter2 = <|
+    wptr_wrap : bool ;
+    wptr_wrap_cnt : 7 word;
+    rptr_wrap : bool;
+    rptr_wrap_cnt : 7 word;
+  |>
+End
+
+Datatype:
+  fmt_flag = <|
+    start_before : bool;
+    stop_after : bool;
+    read_bytes : bool;
+    nak_ok : bool;
+  |>
+End
+
+Datatype:
+  fifo2 = <|
+    reset   : bool;
+    wvalid  : bool;
+    wready  : bool;
+    wdata   : 13 word;
+    depth   : 7 word;
+    rvalid  : bool;
+    rready  : bool;
+    rdata   : 13 word;
+    rptr    : 7 word;
+    wptr    : 7 word;
+    incr_wptr : bool;
+    incr_rptr : bool;
+    empty   : bool;
+    full    : bool;
+    counter2: counter2;
+  |>
+End
+
+Datatype:
+  fifo = <|
+    reset   : bool;
+    wvalid  : bool;
+    wready  : bool;
+    wdata   : 8 word;
+    depth   : 7 word;
+    rvalid  : bool;
+    rready  : bool;
+    rdata   : 8 word;
+    rptr    : 7 word;
+    wptr    : 7 word;
+    incr_wptr : bool;
+    incr_rptr : bool;
+    empty   : bool;
+    full    : bool;
+    counter : counter;
+  |>
+End
+
+Datatype:
   i2c_circuit_state = <|
     (* 32-bit data + 2 bits of error/ready *)
     reg_rsp_o: 34 word;
@@ -61,10 +154,57 @@ Datatype:
     valid: bool;
     (* `reg_rsp_o.error`, if it's being determined by us and not by a window. *)
     error: bool;
+
+    (* required for i2c_core *)
+    fsm_state : 5 word;
+    next_state : 5 word;
+    counter : 20 word;
+    next_counter : 20 word;
+    byte_index : 9 word;
+    next_byte_index : 9 word;
+    next_bit_index : 3 word;
+    bit_index : 3 word;
+    next_pend_restart: bool;
+    pend_restart : bool;
+    next_trans_started: bool;
+    trans_started : bool;
+    req_restart : bool;
+    bit_clr : bool;
+    bit_decr : bool;
+    delay : i2c_delay;
+    curr_delay : 20 word;
+    load_tcount : bool;
+    log_start : bool;
+    log_stop : bool;
+    scl_rx_val : 16 word;
+    next_scl_rx_val : 16 word;
+    stretch_idle_cnt : 32 word;
+    next_stretch_idle_cnt : 32 word;
+    stretch_en : bool;
+    scl_d : bool;
+    byte_clr : bool;
+    byte_decr : bool;
+    byte_num :  9 word;
+    next_sda_rx_val : 16 word;
+    sda_rx_val : 16 word;
+    read_byte_clr : bool;
+    shift_data_en : bool;
+    next_read_byte : 8 word;
+    read_byte : 8 word;
+    fmt_flag : fmt_flag;
+    fmt_byte : 8 word;
+    next_intr_nak_o : bool;
+    next_intr_cmd_complete_o : bool;
+    fmt_fifo : fifo2;
+    rx_fifo : fifo;
+    cnt_gt_one: bool;
+    fmt_fifo_regfile : 6 word -> 13 word;
+    rx_fifo_regfile : 6 word -> 8 word;
   |>
 End
 
 Definition i2c_core_state_rel_def:
+
   (* mstate = model state, cstate = circuit state *)
   i2c_core_state_rel (mstate: i2c_state) (cstate: i2c_circuit_state) <=>
     i2c_hwext_read_rel mstate cstate.hw2reg /\
