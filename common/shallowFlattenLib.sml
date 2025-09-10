@@ -35,16 +35,17 @@ end) (fields_of rty)
 
 fun prove_identity_fupds (rty: hol_type) = let
   val fields = fields_of_concrete rty;
+  val accessors = accessors_of rty;
+  val updates = updates_of rty;
   val nchotomy = nchotomy_of rty;
 in
-  (* TODO: may as well do one at a time now that we don't need to zip with the accessor/fupd theorems *)
-  LIST_CONJ (map (fn (_, {accessor, fupd, ty}) =>
+  LIST_CONJ (map (fn ((_, {accessor, fupd, ty}), accessor_thm, update_thm) =>
     prove (``!r. ^fupd (K (^accessor r)) r = r``,
       gen_tac
       >> qspec_then `r` strip_assume_tac nchotomy
-      >> first_x_assum (fn thm => pure_rewrite_tac [thm])
-      >> EVAL_TAC)
-  ) fields)
+      >> first_x_assum (fn thm => pure_rewrite_tac [thm, accessor_thm, update_thm, combinTheory.K_THM])
+      >> REFL_TAC)
+  ) (Portable.zip3 (fields, accessors, updates)))
 end
 
 fun FORCE_FUPD_CONV ({accessor, fupd, ...}: rcd_fieldinfo) (tm: term) = let
