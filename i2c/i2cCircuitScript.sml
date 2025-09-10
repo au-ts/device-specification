@@ -1,7 +1,7 @@
 open HolKernel Parse boolLib bossLib;
 open wordsTheory;
 open translatorLib;
-open i2cRegsCircuitLib;
+open shallowFlattenLib i2cRegsCircuitLib;
 open cheshireCircuitTheory i2cCircuitStateTheory;
 
 val _ = new_theory "i2cCircuit";
@@ -20,29 +20,42 @@ End
 
 Theorem i2c_reg_top_comb_1_trans = SIMP_RULE (pure_ss ++ ARITH_ss) [reg_req_decode_def, reg_req_accfupds, combinTheory.K_THM, dimindex_7, dimindex_48, WORD_EXTRACT_ZERO2, word_bit_0] i2c_reg_top_comb_1_def;
 
-(* Section --- I2C Core *)
+Theorem COND_ARG1:
+  (if c then f g x else f h x) = f (if c then g else h) x
+Proof
+  simp [COND_RAND, COND_RATOR]
+QED
 
-Overload idle = “0w : 5 word”;
-Overload active = “1w : 5 word”;
-Overload recReadClockLow = “2w : 5 word”;
-Overload recReadClockPulse = “3w : 5 word”;
-Overload recReadHoldBit = “4w : 5 word”;
-Overload recHostClockLowAck = “5w : 5 word”;
-Overload recHostClockPulseAck = “6w : 5 word”;
-Overload recHostHoldBitAck = “7w : 5 word”;
-Overload stopClockStop = “8w : 5 word”;
-Overload stopSetupStop = “9w : 5 word”;
-Overload stopHoldStop = “10w : 5 word”;
-Overload startSetupStart = “11w : 5 word”;
-Overload startHoldStart = “12w : 5 word”;
-Overload startClockStart = “13w : 5 word”;
-Overload transClockLow = “14w : 5 word”;
-Overload transClockPulse = “15w : 5 word”;
-Overload transHoldBit = “16w : 5 word”;
-Overload transClockLowAck = “17w : 5 word”;
-Overload transClockPulseAck = “18w : 5 word”;
-Overload transHoldDevAck = “19w : 5 word”;
-Overload popFmtFifo = “20w : 5 word”;
+Theorem COND_ARG1_K:
+  (if c then f (K a) x else f (K b) x) = f (K (if c then a else b)) x
+Proof
+  simp [COND_ARG1, GSYM COND_RAND, GSYM COND_RATOR]
+QED
+
+Triviality COND_reg_req_decode:
+  (if c then f (reg_req_decode x) else f (reg_req_decode y)) = f (reg_req_decode (if c then x else y))
+Proof
+  simp [COND_RAND]
+QED
+
+Theorem i2c_reg_top_comb_1_flat = i2c_reg_top_comb_1_def
+  |> CONV_RULE (DEPTH_CONV (fn tm => if is_cond tm then SCONV [SF boolSimps.LET_ss] tm else ALL_CONV tm))
+  |> CONV_RULE COND_RECORD_CONV
+  |> SRULE [COND_reg_req_decode]
+  |> SRULE [Ntimes LET_THM 2, SRULE [] (GSYM i2c_req_error_alt)]
+  |> SRULE [WORD_LO, WORD_LS, GSYM i2c_win_addr_def, GSYM COND_reg_req_decode, Q.ISPEC `0w: 86 word` reg_req_decode_def]
+  |> CONV_RULE (DEPTH_CONV (fn tm => if is_comb tm andalso same_const (fst (dest_comb tm)) ``i2c_req_error`` andalso is_record (snd (dest_comb tm)) then SCONV [i2c_req_error_def] tm else ALL_CONV tm))
+  |> SRULE [SF boolSimps.LET_ss];
+
+Theorem i2c_reg_top_comb_2_flat = i2c_reg_top_comb_2_def
+  |> SRULE [SF boolSimps.LET_ss, COND_ARG1_K]
+  |> SRULE [Q.ISPEC `bit_field_insert 33 2` (GSYM COND_2RAND), Q.ISPEC `$:+ n` (GSYM COND_2RAND)];
+
+Theorem i2c_reg_top_ff_flat = i2c_reg_top_ff_def
+  |> SRULE [COND_ARG1_K]
+  |> SRULE [SF boolSimps.LET_ss];
+
+(* Section --- I2C Core *)
 
 (* Direct translation from @{file "i2cCoreCiruitLib.sml"} *)
 Definition fmt_fifo_reset_def:
@@ -760,8 +773,9 @@ Theorem ff_asm1:
             s'' = proc fext s s'
           in
             s''.reg2hw = s'.reg2hw ∧ s''.regs = s'.regs ∧ s''.reg_rsp_o = s'.reg_rsp_o
-            ∧ s''.addr = s'.addr ∧ s''.write = s'.write ∧ s''.wdata = s'.wdata
-            ∧ s''.wstrb = s'.wstrb ∧ s''.valid = s'.valid)
+            ∧ s''.raw_addr = s'.raw_addr ∧ s''.addr = s'.addr ∧ s''.write = s'.write
+            ∧ s''.wdata = s'.wdata ∧ s''.wstrb = s'.wstrb ∧ s''.valid = s'.valid
+            ∧ s''.error = s'.error ∧ s''.win_buses.req = s'.win_buses.req)
 Proof
   LET_ELIM_TAC
   >> rw [i2c_core_ffs1_def]
@@ -787,8 +801,9 @@ Theorem comb_asm1:
             s'' = proc fext s s'
           in
             s''.reg2hw = s'.reg2hw ∧ s''.regs = s'.regs ∧ s''.reg_rsp_o = s'.reg_rsp_o
-            ∧ s''.addr = s'.addr ∧ s''.write = s'.write ∧ s''.wdata = s'.wdata
-            ∧ s''.wstrb = s'.wstrb ∧ s''.valid = s'.valid)
+            ∧ s''.raw_addr = s'.raw_addr ∧ s''.addr = s'.addr ∧ s''.write = s'.write
+            ∧ s''.wdata = s'.wdata ∧ s''.wstrb = s'.wstrb ∧ s''.valid = s'.valid
+            ∧ s''.error = s'.error ∧ s''.win_buses.req = s'.win_buses.req)
 Proof
   LET_ELIM_TAC
   >> rw [i2c_core_combs_def]

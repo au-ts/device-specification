@@ -1,47 +1,14 @@
 open BasicProvers;
 open translatorLib;
+open shallowFlattenLib;
+open cheshireOracleTheory;
 open i2cCircuitTheory;
 open dep_rewrite;
 open i2cCoreTheory;
+open i2cMappingsTheory;
 open i2cCircuitStateTheory;
 
 val _ = new_theory "i2cCoreCircuitProof"
-
-Definition encode_fsm_def:
-  encode_fsm (machine: fsmState) =
-  case machine of
-    Idle => idle
-  | Active => active
-  | Transmitting ClockLow => transClockLow
-  | Transmitting ClockPulse => transClockPulse
-  | Transmitting HoldBit => transHoldBit
-  | Transmitting ClockLowAck => transClockLowAck
-  | Transmitting ClockPulseAck => transClockPulseAck
-  | Transmitting HoldDevAck => transHoldDevAck
-  | Receiving ReadClockLow => recReadClockLow
-  | Receiving ReadClockPulse => recReadClockPulse
-  | Receiving ReadHoldBit => recReadHoldBit
-  | Receiving HostClockLowAck => recHostClockLowAck
-  | Receiving HostClockPulseAck => recHostClockPulseAck
-  | Receiving HostHoldBitAck => recHostHoldBitAck
-  | Starting SetupStart => startSetupStart
-  | Starting HoldStart => startHoldStart
-  | Starting ClockStart => startClockStart
-  | Stopping ClockStop => stopClockStop
-  | Stopping SetupStop => stopSetupStop
-  | Stopping HoldStop => stopHoldStop
-  | PopFmtFifo => popFmtFifo
-End
-
-Definition fifo_rel_def:
-  (fifo_rel [] (circuit : 'a word -> 'b) (rptr : 'c word) wptr ⇔ rptr = wptr)
-∧ (fifo_rel (w :: ws) circuit rptr wptr ⇔
-     ((word_bit (dimindex(:'c) - 1) rptr = word_bit (dimindex(:'c) - 1) wptr) ⇒ wptr >+ rptr)
-   ∧ ((word_bit (dimindex(:'c) - 1) rptr ≠ word_bit (dimindex(:'c) - 1) wptr) ⇒
-      ((dimindex(:'a) - 1 >< 0) wptr : 'a word) <+ ((dimindex(:'a) - 1 >< 0) rptr :'a word))
-   ∧ (circuit $ ((dimindex(:'a) - 1 >< 0) rptr : 'a word) = w)
-   ∧ fifo_rel ws circuit (rptr + 1w) wptr)
-End
 
 Theorem word_bit_UINT_MAXw:
   word_bit (dimindex (:'a) - 1) (UINT_MAXw : 'a word)
@@ -400,29 +367,6 @@ Proof
   >> qpat_x_assum ‘_ ≠ 63w : word6’ mp_tac
   >> blastLib.BBLAST_TAC
 QED
-        
-        
-Definition core_sim_rel_def:
-  core_sim_rel (machine : i2c_state) (circuit: i2c_circuit_state) =
-  ( fifo_rel machine.rx_fifo circuit.rx_fifo_regfile circuit.rx_fifo.rptr circuit.rx_fifo.wptr
-  ∧ fifo_rel machine.fmt_fifo circuit.fmt_fifo_regfile circuit.fmt_fifo.rptr circuit.fmt_fifo.wptr
-  ∧ encode_fsm (machine.fsm_state) = circuit.fsm_state
-  ∧ machine.counter = circuit.counter
-  ∧ machine.pend_restart = circuit.pend_restart
-  ∧ machine.trans_started = circuit.trans_started
-  ∧ machine.bit_index = circuit.bit_index
-  ∧ machine.stretch_idle_cnt = circuit.stretch_idle_cnt
-  ∧ machine.byte_index = circuit.byte_index
-  ∧ machine.read_byte = circuit.read_byte
-(*                                
-  ∧ machine.read_byte_clr = circuit.read_byte_clr
-  ∧ machine.shift_data_en = circuit.shift_data_en
- *)  
-  ∧ machine.scl_rx_val = circuit.scl_rx_val
-  ∧ machine.sda_rx_val = circuit.sda_rx_val
-  ∧ machine.regs = circuit.regs
-  )
-End
 
 val core_init_tm = add_x_inits “<|fmt_fifo_regfile := K 0w; rx_fifo_regfile := K 0w; |>”
 
@@ -518,6 +462,13 @@ Proof
       , core_sim_rel_def]
 QED
 
+Theorem core_sim_rel_i2c_reg_top_comb:
+  (core_sim_rel mstate (i2c_reg_top_comb_1 fext s s') ⇔ core_sim_rel mstate s')
+  ∧ (core_sim_rel mstate (i2c_reg_top_comb_2 fext s s') ⇔ core_sim_rel mstate s')
+Proof
+  simp [core_sim_rel_def, i2c_reg_top_comb_1_flat, i2c_reg_top_comb_2_flat]
+QED
+
 Theorem next_state_disjoint:
   ((i2c_core_next_state fext s s').curr_delay = s'.curr_delay)
   ∧ ((i2c_core_next_state fext s s').load_tcount = s'.load_tcount)
@@ -604,9 +555,9 @@ Proof
 QED
         
 Theorem core_sim_rel_combs:
-  core_sim_rel mstate (procs i2c_core_combs fext s s') ⇔ core_sim_rel mstate s'        
+  core_sim_rel mstate (procs (i2c_reg_top_comb_1::(i2c_core_combs ++ [i2c_reg_top_comb_2])) fext s s') ⇔ core_sim_rel mstate s'
 Proof
-  rewrite_tac [i2c_core_combs_def, procs_def, core_sim_rel_comb]
+  simp [i2c_core_combs_def, procs_def, core_sim_rel_comb, core_sim_rel_i2c_reg_top_comb]
 QED
 
 Definition fnum_witness_def:
@@ -615,7 +566,8 @@ Definition fnum_witness_def:
 End
 
 Theorem i2c_tick_fsm_state:
-  (i2c_tick notif mstate).fsm_state =
+  i2c_tick notif mstate = INR mstate' ==>
+  mstate'.fsm_state =
   (case mstate.fsm_state of
      Idle =>
        if mstate.regs.ctrl.enablehost = 1w ∧ ¬NULL mstate.fmt_fifo then
@@ -722,9 +674,20 @@ Proof
 QED
  
 Theorem cstate_fsm_state:
-  (procs i2c_core_ffs1 (fext 0) cstate cstate).fsm_state = cstate.next_state
+  (procs (i2c_core_ffs1 ++ [i2c_reg_top_ff]) fext cstate cstate).fsm_state = cstate.next_state
 Proof
-  simp [i2c_core_ffs1_def, procs_def, i2c_core_ff_def, next_state_access]
+  simp [i2c_core_ffs1_def, procs_def, i2c_core_ff_def, i2c_reg_top_ff_flat, next_state_access]
+QED
+
+Theorem cheshire_req_fsm_state:
+  cheshire_req i2c_read i2c_write st req = INR (st_upd, notif, rdata) ==>
+  (st_upd st').fsm_state = st'.fsm_state
+Proof
+  rpt strip_tac
+  >> dxrule_then strip_assume_tac cheshire_req_INR_cases
+  >- simp []
+  >- simp []
+  >- dxrule_then (fn thm => simp [thm]) i2c_write_st_upd_alt
 QED
 
 Theorem next_state_comb_access:
@@ -1153,97 +1116,41 @@ Proof
   rw [counter_gt_one_comb_def, fifo_depth_def, ite_rec_sel, fmt_fifo_flag_read_bytes_def, fmt_fifo_flag_stop_after_def,
       fmt_fifo_flag_start_before_def, fmt_fifo_full_def, fmt_fifo_rvalid_def, fmt_fifo_empty_def, fmt_fifo_rdata_def]
 QED
-        
-                
-Theorem next_state_i2c_core_combs_further:
-  (procs i2c_core_combs fext s s').next_state =
-   (if s.fsm_state = 0w then
-      if s.regs.ctrl.enablehost = 1w ∧ s.fmt_fifo.rptr ≠ s.fmt_fifo.wptr then
-        1w
-      else 0w
-    else if s.fsm_state = 1w then
-      if
-        s.fmt_fifo.rptr ≠ s.fmt_fifo.wptr ∧
-        word_bit 10 (s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr))
-      then
-        2w
-      else if
-        (s.fmt_fifo.rptr ≠ s.fmt_fifo.wptr ∧
-         word_bit 8 (s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr))) ∧
-        ¬s.trans_started
-      then
-        11w
-      else 14w
-    else if s.fsm_state = 2w then if 1w <₊ s.counter then 2w else 3w
-    else if s.fsm_state = 3w then if 1w <₊ s.counter then 3w else 4w
-    else if s.fsm_state = 4w then
-      if 1w <₊ s.counter then 4w else if s.bit_index = 0w then 5w else 2w
-    else if s.fsm_state = 5w then if 1w <₊ s.counter then 5w else 6w
-    else if s.fsm_state = 6w then if 1w <₊ s.counter then 6w else 7w
-    else if s.fsm_state = 7w then
-      if 1w <₊ s.counter then 7w
-      else if
-        s.byte_index = 1w ∧ s.fmt_fifo.rptr ≠ s.fmt_fifo.wptr ∧
-        word_bit 9 (s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr))
-      then
-        8w
-      else if
-        s.byte_index = 1w ∧
-        (s.fmt_fifo.rptr = s.fmt_fifo.wptr ∨
-         ¬word_bit 9 (s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr)))
-      then
-        20w
-      else 2w
-    else if s.fsm_state = 8w then if 1w <₊ s.counter then 8w else 9w
-    else if s.fsm_state = 9w then if 1w <₊ s.counter then 9w else 10w
-    else if s.fsm_state = 10w then
-      if 1w <₊ s.counter then 10w
-      else if s.regs.ctrl.enablehost = 0w then 0w
-      else 20w
-    else if s.fsm_state = 11w then if 1w <₊ s.counter then 11w else 12w
-    else if s.fsm_state = 12w then if 1w <₊ s.counter then 12w else 13w
-    else if s.fsm_state = 13w then if 1w <₊ s.counter then 13w else 14w
-    else if s.fsm_state = 14w then
-      if 1w <₊ s.counter then 14w else if s.pend_restart then 11w else 15w
-    else if s.fsm_state = 15w then if 1w <₊ s.counter then 15w else 16w
-    else if s.fsm_state = 16w then
-      if 1w <₊ s.counter then 16w else if s.bit_index = 0w then 17w else 14w
-    else if s.fsm_state = 17w then if 1w <₊ s.counter then 17w else 18w
-    else if s.fsm_state = 18w then if 1w <₊ s.counter then 18w else 19w
-    else if s.fsm_state = 19w then
-      if 1w <₊ s.counter then 19w
-      else if
-        s.fmt_fifo.rptr ≠ s.fmt_fifo.wptr ∧
-        word_bit 9 (s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr))
-      then
-        8w
-      else 20w
-    else if s.fsm_state = 20w then
-      if s.regs.ctrl.enablehost = 0w then 8w
-      else if
-        (if
-           (word_bit 6 s.fmt_fifo.wptr ⇎ word_bit 6 s.fmt_fifo.rptr) ∧
-           ((5 >< 0) s.fmt_fifo.wptr : word6) = ((5 >< 0) s.fmt_fifo.rptr : word6)
-         then
-           (64w : word7)
-         else if word_bit 6 s.fmt_fifo.wptr ⇔ word_bit 6 s.fmt_fifo.rptr then
-           -(1w: word7) * (w2w ((5 >< 0) s.fmt_fifo.rptr : word6) : word7) +
-           (w2w ((5 >< 0) s.fmt_fifo.wptr: word6) : word7)
-         else
-           -(1w: word7) * (w2w ((5 >< 0) s.fmt_fifo.rptr : word6) : word7)+
-           (w2w ((5 >< 0) s.fmt_fifo.wptr : word6): word7) + (64w: word7)) =
-        1w
-      then
-        0w
-      else 1w
-    else 0w)         
-Proof
-  simp [next_state_i2c_core_combs, i2c_core_next_state_def, ite_rec_sel,
-        simp_rvalid, simp_read_bytes, simp_start_before, simp_cnt_gt_one, simp_stop_after, simp_depth]
-  >> simp [fmt_fifo_rvalid_def, fmt_fifo_flag_read_bytes_def, fmt_fifo_empty_def, fmt_fifo_rdata_def,
-           counter_gt_one_comb_def, fifo_depth_def, fmt_fifo_full_def, ite_rec_sel, fmt_fifo_flag_stop_after_def,
-           fmt_fifo_flag_start_before_def]
-QED
+
+Theorem i2c_combs_flat = ``procs (i2c_reg_top_comb_1::(i2c_core_combs ++ [i2c_reg_top_comb_2])) fext s s'``
+  |> SCONV [i2c_core_combs_def, procs_def]
+  |> SRULE [i2c_reg_top_comb_1_flat]
+  |> (fn thm => foldl (fn (rule, thm) => SRULE [rule |> CONV_RULE COND_RECORD_CONV |> SRULE [SF boolSimps.LET_ss]] thm) thm
+           [fmt_fifo_reset_def, fmt_fifo_rdata_def, fmt_fifo_rready_def, fmt_fifo_empty_def,
+            fmt_fifo_incr_rptr_def, fmt_fifo_counter_rptr_wrap_def,
+            fmt_fifo_counter_rptr_wrap_cnt_def, fmt_fifo_wvalid_def, fmt_fifo_full_def,
+            fmt_fifo_incr_wptr_def, fmt_fifo_wdata_def, fmt_fifo_counter_wptr_wrap_def,
+            fmt_fifo_counter_wptr_wrap_cnt_def, i2c_core_delay_comb_def,
+            i2c_core_curr_delay_comb_def, i2c_core_load_tcount_comb_def,
+            i2c_core_log_start_comb_def, i2c_core_log_stop_comb_def, fmt_fifo_rvalid_def,
+            fmt_fifo_flag_start_before_def, fmt_fifo_flag_stop_after_def,
+            fmt_fifo_flag_read_bytes_def, fmt_fifo_flag_nak_ok_def, fmt_byte_def, req_restart_def,
+            bit_clr_def, bit_decr_def, i2c_core_stretch_en_comb_def, i2c_core_scl_d_comb_def,
+            i2c_core_next_scl_rx_val_comb_def, i2c_core_next_stretch_idle_cnt_def,
+            i2c_core_next_counter_def, i2c_core_byte_clr_comb_def, i2c_core_byte_decr_comb_def,
+            i2c_core_byte_num_comb_def, i2c_core_next_byte_index_comb_def, fifo_depth_def,
+            counter_gt_one_comb_def, i2c_core_next_state_def, i2c_core_read_byte_clr_comb_def,
+            i2c_core_shift_data_en_comb_def, i2c_core_next_sda_rx_val_comb_def,
+            i2c_core_rx_fifo_reset_comb_def, i2c_core_rx_fifo_rdata_comb_def,
+            i2c_core_rx_fifo_rready_comb_def, i2c_core_rx_fifo_empty_comb_def,
+            i2c_core_rx_fifo_incr_rptr_comb_def, i2c_core_rx_fifo_counter_rptr_wrap_comb_def,
+            i2c_core_rx_fifo_counter_rptr_wrap_cnt_comb_def,
+            i2c_core_rx_fifo_wvalid_comb_def, i2c_core_rx_fifo_wdata_comb_def,
+            i2c_core_rx_fifo_full_comb_def, i2c_core_rx_fifo_incr_wptr_comb_def,
+            i2c_core_rx_fifo_counter_wptr_wrap_comb_def,
+            i2c_core_rx_fifo_counter_wptr_wrap_cnt_comb_def,
+            hw2reg_intr_state_nak_de_comb_def, next_intr_nak_comb_def,
+            hw2reg_intr_state_cmd_complete_de_comb_def,
+            hw2reg_intr_state_cmd_complete_d_comb_def, next_pend_restart_comb_def,
+            next_trans_started_comb_def])
+  |> SRULE [i2c_reg_top_comb_2_flat];
+
+Theorem next_state_i2c_core_combs_further = SCONV [i2c_combs_flat] ``(procs (i2c_reg_top_comb_1::(i2c_core_combs ++ [i2c_reg_top_comb_2])) fext s s').next_state``
 
 Theorem encode_fsm_next_state:
   encode_fsm (fsmState_CASE x v v1 f f1 f2 f3 v2) =
@@ -1398,9 +1305,9 @@ Proof
 QED
         
 Theorem i2c_core_combs_fsm_state:
-  (procs i2c_core_combs fext s s').fsm_state = s'.fsm_state
+  (procs (i2c_reg_top_comb_1::(i2c_core_combs ++ [i2c_reg_top_comb_2])) fext s s').fsm_state = s'.fsm_state
 Proof
-  simp [i2c_core_combs_def, procs_def, fsm_state_comb_access]
+  simp [i2c_core_combs_def, procs_def, i2c_combs_flat]
 QED
 
 Theorem fifo_rel_null:
@@ -1420,10 +1327,11 @@ Proof
 QED
 
 Theorem i2c_tick_rx_fifo:
-  (i2c_tick notif mstate).rx_fifo =
+  i2c_tick notif mstate = INR mstate' ==>
+  mstate'.rx_fifo =
         (if
            mstate.fsm_state = Receiving ReadHoldBit ∧
-           (i2c_tick notif mstate).fsm_state = Receiving HostClockLowAck ∧
+           mstate'.fsm_state = Receiving HostClockLowAck ∧
            LENGTH mstate.rx_fifo < 64
          then
            (if notif = SOME (Read rdata_read) ∧ ¬NULL mstate.rx_fifo then
@@ -1433,9 +1341,7 @@ Theorem i2c_tick_rx_fifo:
            TL mstate.rx_fifo
          else mstate.rx_fifo)            
 Proof
-  rewrite_tac [i2c_tick_def]
-  >> LET_ELIM_TAC
-  >> simp [Abbr ‘rx_fifo''’, Abbr ‘rx_fifo'’, Abbr ‘fsm_state'’]
+  simp [i2c_tick_def]
 QED
 
 Theorem mstate_with_fnums:
@@ -1594,416 +1500,381 @@ QED
  - provide a relation ‘core_sim_rel’ (relate abstract and concrete states)
  *)
 
-(* FIXME: @Liam to add relationship with ‘notif’ *)
-i2c_core_combs_def
-i2c_core_ffs1_def
+(* TODO: put into CakeML/hardware? (at the very least, stop making copies) *)
+Theorem mk_circuit_cstep:
+  ∃s'. mk_circuit sstep cstep s fext n = cstep (fext n) s' s'
+Proof
+  Cases_on ‘n’
+  >- (qexists ‘s’ >> simp [mk_circuit_def])
+  >- (qexists ‘(sstep (fext n') (mk_circuit sstep cstep s fext n')
+                      (mk_circuit sstep cstep s fext n'))’
+      >> simp [mk_circuit_def])
+QED
 
-(* FIXME: solve issue with submodules
-    --> think how this could be composed with equivalence proof of i2c_reg_tops
-    --> find out what assumptions are needed from i2c_reg_tops
-*)
- 
+Theorem i2c_circuit_cstep:
+  ?s. i2c_circuit fext fbits n = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext n) s s
+Proof
+  simp [i2c_circuit_def, mk_module_def] >> irule mk_circuit_cstep
+QED
+
 Theorem i2c_core_circuit_simulate:
   let
-    i2c_core = mk_module (procs i2c_core_ffs1) (procs i2c_core_combs) core_init fext fbits;
-    cstate = i2c_core n;
-    cstate' = i2c_core $ SUC n
-  in                      
-    core_sim_rel mstate cstate
-    ⇒ ∃fnums. core_sim_rel (i2c_tick notif (mstate with fnums := fnums)) cstate'
+    cstate = i2c_circuit fext fbits n;
+    cstate' = i2c_circuit fext fbits (SUC n);
+    req_c = reg_req_decode (fext n).reg_req_i: 7 reg_req;
+  in
+  i2c_state_rel mstate cstate
+  /\ cheshire_req_rel req_m req_c
+  /\ cheshire_req i2c_read i2c_write mstate req_m = INR (st_upd, notif, rdata)
+  /\ i2c_tick notif (mstate with fnums := fnum_witness (fext n)) = INR mstate'
+  /\ i2c_hwext_notif_rel notif req_c
+  ==> core_sim_rel (st_upd mstate') cstate'
 Proof
-  Induct_on ‘n’
-  >- (
   LET_ELIM_TAC
-  >> qabbrev_tac ‘cstate1_seq = procs i2c_core_ffs1 (fext 0) cstate cstate’
-  >> ‘cstate' = procs i2c_core_combs (fext $ SUC 0) cstate1_seq cstate1_seq’
-    by (
-    rw [Abbr ‘cstate'’, mk_circuit_def, Abbr ‘i2c_core’, mk_module_def, Abbr ‘cstate’, Abbr ‘cstate1_seq’]
-       )
-  >> ‘∃fnums. core_sim_rel (i2c_tick notif (mstate with fnums := fnums)) cstate1_seq’
-     suffices_by (rw [core_sim_rel_combs, Abbr ‘cstate'’])
-  >> EXISTS_TAC “fnum_witness $ fext (0 :num)”
+  >> qabbrev_tac ‘cstate1_seq = procs (i2c_core_ffs1 ++ [i2c_reg_top_ff]) (fext n) cstate cstate’
+  >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
+    by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
+  >> ‘core_sim_rel (st_upd mstate') cstate1_seq’
+    suffices_by (rw [Abbr ‘cstate'’, core_sim_rel_combs])
+  >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >~ [‘encode_fsm’]
   >- (
-     simp [Abbr ‘cstate1_seq’, cstate_fsm_state, Abbr ‘cstate’, i2c_tick_fsm_state,
+     drule_then assume_tac cheshire_req_fsm_state
+     >> drule_then assume_tac i2c_tick_fsm_state
+     >> simp [Abbr ‘cstate1_seq’, cstate_fsm_state, Abbr ‘cstate’,
            encode_fsm_next_state, encode_fsm_ite, encode_fsm_txState, encode_fsm_rxState,
            encode_fsm_startState, encode_fsm_stopState]
+     >> strip_assume_tac i2c_circuit_cstep
      >> Cases_on ‘mstate.fsm_state’ THEN rewrite_tac [fsmState_case_def]
      >~ [‘Idle’]
      >- (
-        ‘(core_init fbits).fsm_state = 0w’ by (
+        ‘s.fsm_state = 0w’ by (
         qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-        THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                   i2c_core_combs_fsm_state, encode_fsm_def] )
-        >> ‘mstate.regs = (core_init fbits).regs’ by (
+        THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+        >> ‘NULL mstate.fmt_fifo ⇔ s.fmt_fifo.rptr = s.fmt_fifo.wptr’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, core_sim_rel_combs]
-           THEN simp [core_sim_rel_def])
-        >> ‘NULL mstate.fmt_fifo ⇔ (core_init fbits).fmt_fifo.rptr = (core_init fbits).fmt_fifo.wptr’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+           THEN simp [core_sim_rel_combs]
            THEN rewrite_tac [core_sim_rel_def]
            THEN rpt strip_tac
            THEN drule fifo_rel_null
            THEN rw [])
-        >> simp [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further, encode_fsm_def])
+        >> simp [i2c_combs_flat, encode_fsm_def])
      >~ [‘Active’]
      >- (
-        ‘(core_init fbits).fsm_state = active’ by (
+        ‘s.fsm_state = active’ by (
         qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-        THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                   i2c_core_combs_fsm_state, encode_fsm_def] )
-        >> ‘NULL mstate.fmt_fifo ⇔ (core_init fbits).fmt_fifo.rptr = (core_init fbits).fmt_fifo.wptr’ by (
+        THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+        >> ‘NULL mstate.fmt_fifo ⇔ s.fmt_fifo.rptr = s.fmt_fifo.wptr’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+           THEN simp [core_sim_rel_combs]
            THEN rewrite_tac [core_sim_rel_def]
            THEN rpt strip_tac
            THEN drule fifo_rel_null
            THEN rw [])
         >> ASM_CASES_TAC “NULL mstate.fmt_fifo”
-        >- ( fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                 encode_fsm_def] )
-        >> ‘HD mstate.fmt_fifo = (core_init fbits).fmt_fifo_regfile ((5 >< 0) (core_init fbits).fmt_fifo.rptr :word6)’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-           THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+        >- ( fs [next_state_i2c_core_combs_further, encode_fsm_def] )
+        >> ‘HD mstate.fmt_fifo = s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr :word6)’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_combs]
            THEN rewrite_tac [core_sim_rel_def]
            THEN rpt strip_tac
            THEN drule fifo_rel_not_null_HD
            THEN disch_then drule
            THEN EVAL_TAC )
-        >> ‘mstate.trans_started = (core_init fbits).trans_started’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-           THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+        >> ‘mstate.trans_started = s.trans_started’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_combs]
            THEN rw [core_sim_rel_def] )
-        >> fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-               encode_fsm_def] )
+        >> fs [next_state_i2c_core_combs_further, encode_fsm_def] )
      >~ [‘Transmitting’]
      >- (
         BETA_TAC
         >> Cases_on ‘t’ THEN simp [txState_case_def]
         >- (
-           ‘(core_init fbits).fsm_state = transClockLow’ by (
+           ‘s.fsm_state = transClockLow’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter) ∧ (mstate.pend_restart = (core_init fbits).pend_restart)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >> fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                  encode_fsm_def, wordsTheory.WORD_HIGHER])
-        >- (
-           ‘(core_init fbits).fsm_state = transClockPulse’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter) ∧ (mstate.pend_restart = (core_init fbits).pend_restart)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >> fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                  encode_fsm_def, wordsTheory.WORD_HIGHER] )
-        >- (
-           ‘(core_init fbits).fsm_state = transHoldBit’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)
-               ∧ (mstate.pend_restart = (core_init fbits).pend_restart)
-               ∧ (mstate.bit_index = (core_init fbits).bit_index)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >> fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                  encode_fsm_def, wordsTheory.WORD_HIGHER] )
-        >- (
-           ‘(core_init fbits).fsm_state = transClockLowAck’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)
-               ∧ (mstate.pend_restart = (core_init fbits).pend_restart)
-               ∧ (mstate.bit_index = (core_init fbits).bit_index)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >> fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                  encode_fsm_def, wordsTheory.WORD_HIGHER] )
-        >- (
-           ‘(core_init fbits).fsm_state = transClockPulseAck’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)
-               ∧ (mstate.pend_restart = (core_init fbits).pend_restart)
-               ∧ (mstate.bit_index = (core_init fbits).bit_index)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >> fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                  encode_fsm_def, wordsTheory.WORD_HIGHER] )
-        >- (
-           ‘(core_init fbits).fsm_state = transHoldDevAck’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)
-               ∧ (mstate.pend_restart = (core_init fbits).pend_restart)
-               ∧ (mstate.bit_index = (core_init fbits).bit_index)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >> ‘NULL mstate.fmt_fifo ⇔ (core_init fbits).fmt_fifo.rptr = (core_init fbits).fmt_fifo.wptr’ by (
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter) ∧ (mstate.pend_restart = s.pend_restart)’ by (
               qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-              THEN simp [mk_module_def, mk_circuit_def,  Abbr ‘i2c_core’, core_sim_rel_combs]
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >> fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER])
+        >- (
+           ‘s.fsm_state = transClockPulse’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter) ∧ (mstate.pend_restart = s.pend_restart)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >> fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+        >- (
+           ‘s.fsm_state = transHoldBit’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)
+               ∧ (mstate.pend_restart = s.pend_restart)
+               ∧ (mstate.bit_index = s.bit_index)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >> fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+        >- (
+           ‘s.fsm_state = transClockLowAck’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)
+               ∧ (mstate.pend_restart = s.pend_restart)
+               ∧ (mstate.bit_index = s.bit_index)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >> fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+        >- (
+           ‘s.fsm_state = transClockPulseAck’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)
+               ∧ (mstate.pend_restart = s.pend_restart)
+               ∧ (mstate.bit_index = s.bit_index)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >> fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+        >- (
+           ‘s.fsm_state = transHoldDevAck’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)
+               ∧ (mstate.pend_restart = s.pend_restart)
+               ∧ (mstate.bit_index = s.bit_index)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >> ‘NULL mstate.fmt_fifo ⇔ s.fmt_fifo.rptr = s.fmt_fifo.wptr’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
               THEN rewrite_tac [core_sim_rel_def]
               THEN rpt strip_tac
               THEN drule fifo_rel_null
               THEN DISCH_THEN ACCEPT_TAC)
            >> ASM_CASES_TAC “NULL mstate.fmt_fifo”
-           >- ( fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
-           >> ‘HD mstate.fmt_fifo = (core_init fbits).fmt_fifo_regfile ((5 >< 0) (core_init fbits).fmt_fifo.rptr :word6)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+           >- ( fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+           >> ‘HD mstate.fmt_fifo = s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr :word6)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
               THEN rewrite_tac [core_sim_rel_def]
               THEN rpt strip_tac
               THEN drule fifo_rel_not_null_HD
               THEN disch_then drule
               THEN EVAL_TAC )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
      >~ [‘Receiving’]
      >- (
         BETA_TAC
         >> Cases_on ‘r’ THEN simp [rxState_case_def]
         >- (
-           ‘(core_init fbits).fsm_state = recReadClockLow’ by (
+           ‘s.fsm_state = recReadClockLow’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
-        >- (
-           ‘(core_init fbits).fsm_state = recReadClockPulse’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
-        >- (
-           ‘(core_init fbits).fsm_state = recReadHoldBit’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter) ∧ (mstate.bit_index = (core_init fbits).bit_index)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
-        >- (
-           ‘(core_init fbits).fsm_state = recHostClockLowAck’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter) ∧ (mstate.bit_index = (core_init fbits).bit_index)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
-        >- (
-           ‘(core_init fbits).fsm_state = recHostClockPulseAck’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter) ∧ (mstate.bit_index = (core_init fbits).bit_index)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
-        >- (
-           ‘(core_init fbits).fsm_state = recHostHoldBitAck’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)
-               ∧ (mstate.bit_index = (core_init fbits).bit_index)
-               ∧ (mstate.byte_index = (core_init fbits).byte_index)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
-              THEN rewrite_tac [core_sim_rel_def]
-              THEN rpt strip_tac
-              THEN rw [] )
-           >> ‘NULL mstate.fmt_fifo ⇔ (core_init fbits).fmt_fifo.rptr = (core_init fbits).fmt_fifo.wptr’ by (
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)’ by (
               qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-              THEN simp [mk_module_def, mk_circuit_def,  Abbr ‘i2c_core’, core_sim_rel_combs]
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+        >- (
+           ‘s.fsm_state = recReadClockPulse’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+        >- (
+           ‘s.fsm_state = recReadHoldBit’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter) ∧ (mstate.bit_index = s.bit_index)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+        >- (
+           ‘s.fsm_state = recHostClockLowAck’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter) ∧ (mstate.bit_index = s.bit_index)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+        >- (
+           ‘s.fsm_state = recHostClockPulseAck’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter) ∧ (mstate.bit_index = s.bit_index)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+        >- (
+           ‘s.fsm_state = recHostHoldBitAck’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)
+               ∧ (mstate.bit_index = s.bit_index)
+               ∧ (mstate.byte_index = s.byte_index)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
+              THEN rewrite_tac [core_sim_rel_def]
+              THEN rpt strip_tac
+              THEN rw [] )
+           >> ‘NULL mstate.fmt_fifo ⇔ s.fmt_fifo.rptr = s.fmt_fifo.wptr’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
               THEN rewrite_tac [core_sim_rel_def]
               THEN rpt strip_tac
               THEN drule fifo_rel_null
               THEN DISCH_THEN ACCEPT_TAC)
            >> ASM_CASES_TAC “NULL mstate.fmt_fifo”
-           >- ( fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
-           >> ‘HD mstate.fmt_fifo = (core_init fbits).fmt_fifo_regfile ((5 >< 0) (core_init fbits).fmt_fifo.rptr :word6)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+           >- ( fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
+           >> ‘HD mstate.fmt_fifo = s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr :word6)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
               THEN rewrite_tac [core_sim_rel_def]
               THEN rpt strip_tac
               THEN drule fifo_rel_not_null_HD
               THEN disch_then drule
               THEN EVAL_TAC )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
      >~ [‘Starting’]  
      >- (
         BETA_TAC
-        >> Cases_on ‘s’ THEN simp [startState_case_def]
+        >> Cases_on ‘s'’ THEN simp [startState_case_def]
         >- (
-           ‘(core_init fbits).fsm_state = startSetupStart’ by (
+           ‘s.fsm_state = startSetupStart’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
               THEN rewrite_tac [core_sim_rel_def]
               THEN rpt strip_tac
               THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
         >- (
-           ‘(core_init fbits).fsm_state = startHoldStart’ by (
+           ‘s.fsm_state = startHoldStart’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
               THEN rewrite_tac [core_sim_rel_def]
               THEN rpt strip_tac
               THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
         >- (
-           ‘(core_init fbits).fsm_state = startClockStart’ by (
+           ‘s.fsm_state = startClockStart’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
               THEN rewrite_tac [core_sim_rel_def]
               THEN rpt strip_tac
               THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
      >~ [‘Stopping’]
      >- (
         BETA_TAC
-        >> Cases_on ‘s’ THEN simp [stopState_case_def]
+        >> Cases_on ‘s'’ THEN simp [stopState_case_def]
         >- (
-           ‘(core_init fbits).fsm_state = stopClockStop’ by (
+           ‘s.fsm_state = stopClockStop’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
               THEN rewrite_tac [core_sim_rel_def]
               THEN rpt strip_tac
               THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
         >- (
-           ‘(core_init fbits).fsm_state = stopSetupStop’ by (
+           ‘s.fsm_state = stopSetupStop’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN simp [core_sim_rel_combs]
               THEN rewrite_tac [core_sim_rel_def]
               THEN rpt strip_tac
               THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] )
         >- (
-           ‘(core_init fbits).fsm_state = stopHoldStop’ by (
+           ‘s.fsm_state = stopHoldStop’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                      i2c_core_combs_fsm_state, encode_fsm_def] )
-           >> ‘(mstate.counter = (core_init fbits).counter) ∧ (mstate.regs = (core_init fbits).regs)’ by (
-              qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-              THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+           THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+           >> ‘(mstate.counter = s.counter) ∧ (mstate.regs = s.regs)’ by (
+              qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+              THEN qpat_x_assum `mstate.regs = (i2c_circuit fext fbits n).regs` kall_tac
+              THEN simp [core_sim_rel_combs]
               THEN rewrite_tac [core_sim_rel_def]
               THEN rpt strip_tac
               THEN rw [] )
-           >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                   encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
+           >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
      >~ [‘PopFmtFifo’]
      >- (
-        ‘(core_init fbits).fsm_state = popFmtFifo’ by (
+        ‘s.fsm_state = popFmtFifo’ by (
         qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-        THEN simp [core_sim_rel_def, Abbr ‘i2c_core’, mk_module_def, mk_circuit_def,
-                   i2c_core_combs_fsm_state, encode_fsm_def] )
-        >> ‘(mstate.regs = (core_init fbits).regs)’ by (
-           qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-           THEN simp [mk_module_def, mk_circuit_def, Abbr ‘i2c_core’, core_sim_rel_combs]
+        THEN simp [core_sim_rel_def, i2c_core_combs_fsm_state, encode_fsm_def] )
+        >> ‘(mstate.regs = s.regs)’ by (
+           qpat_x_assum ‘core_sim_rel _ _’ mp_tac
+           THEN qpat_x_assum `mstate.regs = (i2c_circuit fext fbits n).regs` kall_tac
+           THEN simp [core_sim_rel_combs]
            THEN rewrite_tac [core_sim_rel_def]
            THEN rpt strip_tac
            THEN rw [] )
-        >> ‘NULL mstate.fmt_fifo ⇔ (core_init fbits).fmt_fifo.rptr = (core_init fbits).fmt_fifo.wptr’ by (
+        >> ‘NULL mstate.fmt_fifo ⇔ s.fmt_fifo.rptr = s.fmt_fifo.wptr’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [mk_module_def, mk_circuit_def,  Abbr ‘i2c_core’, core_sim_rel_combs]
+           THEN simp [core_sim_rel_combs]
            THEN rewrite_tac [core_sim_rel_def]
            THEN rpt strip_tac
            THEN drule fifo_rel_null
            THEN DISCH_THEN ACCEPT_TAC)
-        >> ‘fifo_rel mstate.fmt_fifo (core_init fbits).fmt_fifo_regfile (core_init fbits).fmt_fifo.rptr (core_init fbits).fmt_fifo.wptr’ by (
+        >> ‘fifo_rel mstate.fmt_fifo s.fmt_fifo_regfile s.fmt_fifo.rptr s.fmt_fifo.wptr’ by (
            qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-           THEN simp [mk_module_def, mk_circuit_def,  Abbr ‘i2c_core’, core_sim_rel_combs]
+           THEN simp [core_sim_rel_combs]
            THEN rewrite_tac [core_sim_rel_def]
            THEN rpt strip_tac
            THEN drule fifo_rel_null
            THEN DISCH_THEN ACCEPT_TAC)
         >> drule length_fifo
         >> disch_then (fn th => REWRITE_TAC [th])
-        >>  fs [Abbr ‘i2c_core’, mk_module_def, mk_circuit_def, next_state_i2c_core_combs_further,
-                encode_fsm_def, wordsTheory.WORD_HIGHER]
+        >>  fs [next_state_i2c_core_combs_further, encode_fsm_def, wordsTheory.WORD_HIGHER]
         >> ‘dimindex(:6) = (5:num) + (1:num) - (0:num)’ by EVAL_TAC
                                                                 
         >> drule wordsTheory.EXTEND_EXTRACT
@@ -2062,7 +1933,43 @@ Proof
   >- (
     cheat
   ) (* regs *)
-  )
-  (* inductive part*)
-  cheat
-QED        
+QED
+
+Theorem i2c_core_correct:
+  !mstate req_m fext fbits n st_upd notif rdata.
+  let
+    req_c = reg_req_decode (fext n).reg_req_i: 7 reg_req
+  in
+  i2c_state_rel mstate (i2c_circuit fext fbits n)
+  /\ cheshire_req_rel req_m req_c
+  /\ cheshire_req i2c_read i2c_write mstate req_m = INR (st_upd, notif, rdata)
+  /\ ISR (i2c_tick notif mstate)
+  /\ i2c_hwext_notif_rel notif req_c
+  ==> ?fnums. i2c_core_state_rel (st_upd (OUTR (i2c_tick notif (mstate with fnums := fnums)))) (i2c_circuit fext fbits (SUC n))
+    /\ i2c_hw_write_rel (mstate with fnums := fnums).regs (OUTR (i2c_tick notif (mstate with fnums := fnums))).regs
+                        (i2c_circuit fext fbits n).hw2reg
+    /\ ~i2c_win_error (i2c_circuit fext fbits n).win_buses
+Proof
+  simp []
+  >> rpt strip_tac
+  >> qexists `fnum_witness (fext n)`
+  >> `?mstate'. i2c_tick notif (mstate with fnums := fnum_witness (fext n)) = INR mstate'`
+     by (simp [GSYM ISR_exists, i2c_tick_ISR_fnums])
+  >> simp [i2c_core_state_rel_def]
+  >> rpt strip_tac
+
+  (* i2c_hwext_read_rel *)
+  >- cheat
+  (* i2c_win_read_rel *)
+  >- cheat
+  (* i2c_win_ready *)
+  >- cheat
+  (* core_sim_rel *)
+  >- drule_all_then irule $ SRULE [SF boolSimps.LET_ss] i2c_core_circuit_simulate
+  (* i2c_hw_write_rel *)
+  >- cheat
+  (* i2c_win_error *)
+  >- cheat
+QED
+
+val _ = export_theory ();

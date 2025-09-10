@@ -1,7 +1,7 @@
 open HolKernel Parse boolLib bossLib;
 open wordsTheory;
 open translatorLib;
-open spi_hostRegsCircuitLib;
+open shallowFlattenLib spi_hostRegsCircuitLib;
 open cheshireCircuitTheory spi_hostCircuitStateTheory;
 
 val _ = new_theory "spi_hostCircuit";
@@ -19,6 +19,41 @@ Definition spi_host_reg_top_ff_def:
 End
 
 Theorem spi_host_reg_top_comb_1_trans = SIMP_RULE (pure_ss ++ ARITH_ss) [reg_req_decode_def, reg_req_accfupds, combinTheory.K_THM, dimindex_6, dimindex_48, WORD_EXTRACT_ZERO2, word_bit_0] spi_host_reg_top_comb_1_def;
+
+Theorem COND_ARG1:
+  (if c then f g x else f h x) = f (if c then g else h) x
+Proof
+  simp [COND_RAND, COND_RATOR]
+QED
+
+Theorem COND_ARG1_K:
+  (if c then f (K a) x else f (K b) x) = f (K (if c then a else b)) x
+Proof
+  simp [COND_ARG1, GSYM COND_RAND, GSYM COND_RATOR]
+QED
+
+Triviality COND_reg_req_decode:
+  (if c then f (reg_req_decode x) else f (reg_req_decode y)) = f (reg_req_decode (if c then x else y))
+Proof
+  simp [COND_RAND]
+QED
+
+Theorem spi_host_reg_top_comb_1_flat = spi_host_reg_top_comb_1_def
+  |> CONV_RULE (DEPTH_CONV (fn tm => if is_cond tm then SCONV [SF boolSimps.LET_ss] tm else ALL_CONV tm))
+  |> CONV_RULE COND_RECORD_CONV
+  |> SRULE [COND_reg_req_decode]
+  |> SRULE [Ntimes LET_THM 2, SRULE [] (GSYM spi_host_req_error_alt)]
+  |> SRULE [WORD_LO, WORD_LS, GSYM spi_host_win_addr_def, GSYM COND_reg_req_decode, Q.ISPEC `0w: 86 word` reg_req_decode_def]
+  |> CONV_RULE (DEPTH_CONV (fn tm => if is_comb tm andalso same_const (fst (dest_comb tm)) ``spi_host_req_error`` andalso is_record (snd (dest_comb tm)) then SCONV [spi_host_req_error_def] tm else ALL_CONV tm))
+  |> SRULE [SF boolSimps.LET_ss];
+
+Theorem spi_host_reg_top_comb_2_flat = spi_host_reg_top_comb_2_def
+  |> SRULE [SF boolSimps.LET_ss, COND_ARG1_K]
+  |> SRULE [Q.ISPEC `bit_field_insert 33 2` (GSYM COND_2RAND), Q.ISPEC `$:+ n` (GSYM COND_2RAND)];
+
+Theorem spi_host_reg_top_ff_flat = spi_host_reg_top_ff_def
+  |> SRULE [COND_ARG1_K]
+  |> SRULE [SF boolSimps.LET_ss];
 
 val init_tm = add_x_inits ``
   <|

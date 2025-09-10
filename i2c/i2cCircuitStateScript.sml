@@ -203,6 +203,86 @@ Datatype:
   |>
 End
 
+Overload idle = “0w : 5 word”;
+Overload active = “1w : 5 word”;
+Overload recReadClockLow = “2w : 5 word”;
+Overload recReadClockPulse = “3w : 5 word”;
+Overload recReadHoldBit = “4w : 5 word”;
+Overload recHostClockLowAck = “5w : 5 word”;
+Overload recHostClockPulseAck = “6w : 5 word”;
+Overload recHostHoldBitAck = “7w : 5 word”;
+Overload stopClockStop = “8w : 5 word”;
+Overload stopSetupStop = “9w : 5 word”;
+Overload stopHoldStop = “10w : 5 word”;
+Overload startSetupStart = “11w : 5 word”;
+Overload startHoldStart = “12w : 5 word”;
+Overload startClockStart = “13w : 5 word”;
+Overload transClockLow = “14w : 5 word”;
+Overload transClockPulse = “15w : 5 word”;
+Overload transHoldBit = “16w : 5 word”;
+Overload transClockLowAck = “17w : 5 word”;
+Overload transClockPulseAck = “18w : 5 word”;
+Overload transHoldDevAck = “19w : 5 word”;
+Overload popFmtFifo = “20w : 5 word”;
+
+Definition encode_fsm_def:
+  encode_fsm (machine: fsmState) =
+  case machine of
+    Idle => idle
+  | Active => active
+  | Transmitting ClockLow => transClockLow
+  | Transmitting ClockPulse => transClockPulse
+  | Transmitting HoldBit => transHoldBit
+  | Transmitting ClockLowAck => transClockLowAck
+  | Transmitting ClockPulseAck => transClockPulseAck
+  | Transmitting HoldDevAck => transHoldDevAck
+  | Receiving ReadClockLow => recReadClockLow
+  | Receiving ReadClockPulse => recReadClockPulse
+  | Receiving ReadHoldBit => recReadHoldBit
+  | Receiving HostClockLowAck => recHostClockLowAck
+  | Receiving HostClockPulseAck => recHostClockPulseAck
+  | Receiving HostHoldBitAck => recHostHoldBitAck
+  | Starting SetupStart => startSetupStart
+  | Starting HoldStart => startHoldStart
+  | Starting ClockStart => startClockStart
+  | Stopping ClockStop => stopClockStop
+  | Stopping SetupStop => stopSetupStop
+  | Stopping HoldStop => stopHoldStop
+  | PopFmtFifo => popFmtFifo
+End
+
+Definition fifo_rel_def:
+  (fifo_rel [] (circuit : 'a word -> 'b) (rptr : 'c word) wptr ⇔ rptr = wptr)
+∧ (fifo_rel (w :: ws) circuit rptr wptr ⇔
+     ((word_bit (dimindex(:'c) - 1) rptr = word_bit (dimindex(:'c) - 1) wptr) ⇒ wptr >+ rptr)
+   ∧ ((word_bit (dimindex(:'c) - 1) rptr ≠ word_bit (dimindex(:'c) - 1) wptr) ⇒
+      ((dimindex(:'a) - 1 >< 0) wptr : 'a word) <+ ((dimindex(:'a) - 1 >< 0) rptr :'a word))
+   ∧ (circuit $ ((dimindex(:'a) - 1 >< 0) rptr : 'a word) = w)
+   ∧ fifo_rel ws circuit (rptr + 1w) wptr)
+End
+
+Definition core_sim_rel_def:
+  core_sim_rel (machine : i2c_state) (circuit: i2c_circuit_state) =
+  ( fifo_rel machine.rx_fifo circuit.rx_fifo_regfile circuit.rx_fifo.rptr circuit.rx_fifo.wptr
+  ∧ fifo_rel machine.fmt_fifo circuit.fmt_fifo_regfile circuit.fmt_fifo.rptr circuit.fmt_fifo.wptr
+  ∧ encode_fsm (machine.fsm_state) = circuit.fsm_state
+  ∧ machine.counter = circuit.counter
+  ∧ machine.pend_restart = circuit.pend_restart
+  ∧ machine.trans_started = circuit.trans_started
+  ∧ machine.bit_index = circuit.bit_index
+  ∧ machine.stretch_idle_cnt = circuit.stretch_idle_cnt
+  ∧ machine.byte_index = circuit.byte_index
+  ∧ machine.read_byte = circuit.read_byte
+(*
+  ∧ machine.read_byte_clr = circuit.read_byte_clr
+  ∧ machine.shift_data_en = circuit.shift_data_en
+ *)
+  ∧ machine.scl_rx_val = circuit.scl_rx_val
+  ∧ machine.sda_rx_val = circuit.sda_rx_val
+  ∧ machine.regs = circuit.regs
+  )
+End
+
 Definition i2c_core_state_rel_def:
 
   (* mstate = model state, cstate = circuit state *)
@@ -218,7 +298,8 @@ Definition i2c_core_state_rel_def:
      * just yet; besides, much of the work of fixing this would go towards Cheshire-
      * specific code, when I don't think it's likely that we're going to find a
      * Cheshire peripheral which doesn't respond immediately. *)
-    i2c_win_ready cstate.win_buses
+    i2c_win_ready cstate.win_buses /\
+    core_sim_rel mstate cstate
 End
 
 Definition i2c_state_rel_def:
@@ -232,7 +313,7 @@ Theorem i2c_state_rel_fnums:
   i2c_state_rel (st with fnums := fnums) = i2c_state_rel st
 Proof
   irule EQ_EXT
-  >> simp [i2c_state_rel_def, i2c_notif_rel_def, i2c_core_state_rel_def, i2c_hwext_read_rel_def, i2c_win_read_rel_def]
+  >> simp [i2c_state_rel_def, i2c_notif_rel_def, i2c_core_state_rel_def, i2c_hwext_read_rel_def, i2c_win_read_rel_def, core_sim_rel_def]
   >> simp [i2c_get_status_fmtfull_def, i2c_get_status_rxfull_def, i2c_get_status_fmtempty_def, i2c_get_status_hostidle_def, i2c_get_status_targetidle_def, i2c_get_status_rxempty_def, i2c_get_status_txfull_def, i2c_get_status_acqfull_def, i2c_get_status_txempty_def, i2c_get_status_acqempty_def, i2c_get_rdata_rdata_def, i2c_get_fifo_status_fmtlvl_def, i2c_get_fifo_status_txlvl_def, i2c_get_fifo_status_rxlvl_def, i2c_get_fifo_status_acqlvl_def, i2c_get_val_scl_rx_def, i2c_get_val_sda_rx_def, i2c_get_acqdata_abyte_def, i2c_get_acqdata_signal_def]
 QED
 
