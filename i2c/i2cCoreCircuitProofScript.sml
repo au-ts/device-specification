@@ -7,7 +7,7 @@ open dep_rewrite;
 open i2cCoreTheory;
 open i2cMappingsTheory;
 open i2cCircuitStateTheory;
-
+ 
 val _ = new_theory "i2cCoreCircuitProof"
 
 Theorem word_bit_UINT_MAXw:
@@ -42,63 +42,6 @@ Proof
   simp [wordsTheory.word_bit_n2w]
 QED
 
-(*        
-Theorem word_bit_eq_GT:
-  (x : 'a word) + 1w >+ x ∧ 1 < dimindex (:α) 
-  ⇒ (word_bit (dimindex (:'a) - 1) x ⇔
-       word_bit (dimindex (:'a) - 1) (x + 1w))
-Proof
-  once_rewrite_tac [wordsTheory.WORD_ADD_COMM]
-  >> rewrite_tac [wordsTheory.WORD_HIGHER, WORD_ADD_RIGHT_LO2]
-  >> rpt $ strip_tac
-  >- (
-     ‘1w + x = 1w’ by ( rw [] ) 
-     THEN asm_rewrite_tac [wordsTheory.word_bit_0]
-     THEN drule word_msb_1
-     THEN simp [SF WORD_ss, SF WORD_BIT_EQ_ss])
-  >- (
-  )
-QED
-        
-
-Theorem word_msb_differs:
-  word_bit (dimindex (:α) - 1) x ≠ word_bit (dimindex (:α) - 1) ((x : α word) + 1w) ⇒
-  x = UINT_MAXw ∨ x = INT_MAXw
-Proof
-  print_match [] “word_bit _ (_ + _)”
-QED
-
-Theorem fifo_rel_append:
-  dimindex (:γ) < dimindex (:α) ⇒
-  ∀rptr. fifo_rel (xs ++ ys) (circuit: γ word -> β) (rptr: α word) wptr ⇒
-           ∃cptr. fifo_rel xs circuit rptr cptr ∧ fifo_rel ys circuit cptr wptr
-Proof
-  >> strip_tac
-  >> Induct_on ‘xs’ >- (rw [fifo_rel_def, listTheory.APPEND] )
-  >> rpt strip_tac
-  >> fs [fifo_rel_def]
-  >> first_x_assum drule
-  >> disch_then CHOOSE_TAC
-  >> EXISTS_TAC “cptr: 'a word”
-  >> ASM_CASES_TAC “xs = [] : 'b list”
-  >- (
-     ‘cptr = rptr + 1w’ by ( fs [fifo_rel_def] )
-     THEN ‘((word_bit (dimindex (:α) − (1 :num)) rptr ⇎ word_bit (dimindex (:α) − (1 :num)) cptr) ⇒
-          ((dimindex (:γ) − (1 :num) >< (0 :num)) cptr :γ word) <₊ ((dimindex (:γ) − (1 :num) >< (0 :num)) rptr :γ word))’
-       suffices_by ( metis_tac [word_bit_eq_GT])
-     THEN strip_tac
-     THEN ‘((dimindex (:γ) - 1 >< 0) (rptr + 1w) : γ word) = ((dimindex (:γ) - 1 >< 0) rptr : γ word) + (((dimindex (:γ) - 1 >< 0) (1w : α word)) : γ word)’
-          by (irule WORD_EXTRACT_OVER_ADD >> simp [])
-     THEN asm_rewrite_tac []
-        
-sprint_match [] “_ + x <+ x”        
-  )
-   
-  
-QED
-*)
-        
-
 Theorem fifo_rel_not_null:
   fifo_rel ws (circuit : 'a word -> 'b) (rptr: 'c word) wptr ∧ ¬ NULL ws ⇒ rptr ≠ wptr
 Proof
@@ -119,7 +62,7 @@ Proof
      >> fs []
   )
 QED
-        
+
 Theorem n2w_length_fifo:
   fifo_rel ws (circuit: 6 word -> 'a) (rptr:7 word) (wptr:7 word) ⇒
   n2w $ LENGTH ws = if (word_bit 6 wptr ≠ word_bit 6 rptr) ∧ ((5 >< 0) wptr :word6 = (5 >< 0) rptr :word6) then 64w : word7
@@ -207,7 +150,7 @@ Proof
         THEN NTAC 4 $ first_x_assum mp_tac
         THEN simp [SF WORD_ARITH_ss, SF WORD_EXTRACT_ss, SF WORD_ss]
         THEN blastLib.BBLAST_TAC ) )
-  >> ‘(5 >< 0) wptr :word6 <+ (5 >< 0) rptr : word6’ by (
+  >> ‘(5 >< 0) wptr :word6 <=+ (5 >< 0) rptr : word6’ by (
      qpat_x_assum ‘fifo_rel (_ :: _) _ _ _’ mp_tac
      THEN rewrite_tac [fifo_rel_def]
      THEN EVAL_TAC
@@ -225,7 +168,7 @@ Proof
   >> ‘word_bit 6 rptr = word_bit 6 (rptr + 1w)’ by (first_x_assum mp_tac THEN blastLib.BBLAST_TAC )
   >> ‘word_bit 6 wptr ≠ word_bit 6 (rptr + 1w)’ by ( fs [] )
   >> ‘(5 >< 0) wptr : word6 ≠ (5 >< 0) (rptr + 1w) : word6’ by (
-     qpat_x_assum ‘_ <+ _’ mp_tac
+     qpat_x_assum ‘_ <=+ _’ mp_tac
      THEN qpat_x_assum ‘_ ≠ 63w : word6’ mp_tac
      THEN blastLib.BBLAST_TAC )
   >> qpat_x_assum ‘n2w $ LENGTH ws = _’ mp_tac
@@ -330,7 +273,7 @@ Proof
         THEN NTAC 4 $ first_x_assum mp_tac
         THEN simp [SF WORD_ARITH_ss, SF WORD_EXTRACT_ss, SF WORD_ss]
         THEN blastLib.BBLAST_TAC ) )
-  >> ‘(5 >< 0) wptr :word6 <+ (5 >< 0) rptr : word6’ by (
+  >> ‘(5 >< 0) wptr :word6 <=+ (5 >< 0) rptr : word6’ by (
      qpat_x_assum ‘fifo_rel (_ :: _) _ _ _’ mp_tac
      THEN rewrite_tac [fifo_rel_def]
      THEN EVAL_TAC
@@ -352,7 +295,7 @@ Proof
   >> ‘word_bit 6 rptr = word_bit 6 (rptr + 1w)’ by (first_x_assum mp_tac THEN blastLib.BBLAST_TAC )
   >> ‘word_bit 6 wptr ≠ word_bit 6 (rptr + 1w)’ by ( fs [] )
   >> ‘(5 >< 0) wptr : word6 ≠ (5 >< 0) (rptr + 1w) : word6’ by (
-     qpat_x_assum ‘_ <+ _’ mp_tac
+     qpat_x_assum ‘_ <=+ _’ mp_tac
      THEN qpat_x_assum ‘_ ≠ 63w : word6’ mp_tac
      THEN blastLib.BBLAST_TAC )
   >> qpat_x_assum ‘LENGTH ws = _’ mp_tac
@@ -366,6 +309,428 @@ Proof
   >> asm_rewrite_tac [wordsTheory.w2n_11]
   >> qpat_x_assum ‘_ ≠ 63w : word6’ mp_tac
   >> blastLib.BBLAST_TAC
+QED
+
+Theorem word_bit_add_64w:
+  (((x : 7 word) + 64w) ' 0 = x ' 0)
+∧ (((x : 7 word) + 64w) ' 1 = x ' 1)
+∧ (((x : 7 word) + 64w) ' 2 = x ' 2)
+∧ (((x : 7 word) + 64w) ' 3 = x ' 3)
+∧ (((x : 7 word) + 64w) ' 4 = x ' 4)
+∧ (((x : 7 word) + 64w) ' 5 = x ' 5)
+Proof
+  blastLib.BBLAST_TAC
+QED
+
+(* FIXME: generalise the bitwidth *)        
+Theorem length_fifo_max:
+  fifo_rel ws (circuit : 6 word -> α) (rptr: 7 word) wptr ⇒ LENGTH ws ≤ 2 ** 6
+Proof
+  rpt strip_tac
+  >> drule length_fifo
+  >> disch_then (fn th => REWRITE_TAC [th])
+  >> IF_CASES_TAC >- ( EVAL_TAC )
+  >> ASM_CASES_TAC “ws : α list = []”
+  >- (
+     ‘rptr = wptr’ by ( fs [fifo_rel_def])
+     >> first_x_assum mp_tac >> blastLib.BBLAST_TAC )
+  >> IF_CASES_TAC
+  >- (
+     ‘w2n $ ((5 >< 0) wptr : 7 word) - ((5 >< 0) rptr : 7 word) ≤ 2 ** 6’
+         suffices_by ( simp [SF WORD_ARITH_EQ_ss])
+     THEN ‘(5 >< 0) (rptr: 7 word) : 7 word <=+ (5 >< 0) (wptr : 7 word) : 7 word’ by (
+        ‘ws = HD ws :: TL ws’ by ( metis_tac [listTheory.LIST_NOT_NIL])
+        >> ‘fifo_rel (HD ws :: TL ws) circuit rptr wptr’ by ( metis_tac [] )
+        >> fs [fifo_rel_def]
+        >> ‘wptr >+ rptr’ by ( fs [] )
+        >> first_x_assum mp_tac
+        >> qpat_x_assum ‘_ ⇔ _’ mp_tac
+        >> blastLib.BBLAST_TAC)
+     THEN drule wordsTheory.word_sub_w2n
+     THEN disch_then (fn th => REWRITE_TAC [th])
+     THEN ‘w2n ((5 >< 0) wptr : 7 word) ≤ 2 ** 6 + w2n ((5 >< 0) rptr : 7 word)’ suffices_by (simp [SF WORD_ARITH_ss])
+     THEN ‘2 ** 6 ≤ 2 ** 6 + w2n ((5 >< 0) rptr : 7 word)’ suffices_by (
+        assume_tac
+           $ SPEC “wptr: 7 word” $ SPEC “0:num” $ SPEC “5:num” $ INST_TYPE [“:α” |-> “:7”, “:β” |-> “:7”]
+           wordsTheory.WORD_EXTRACT_LT
+        >> first_x_assum mp_tac >> EVAL_TAC >> decide_tac)
+     THEN decide_tac)
+  >> ‘ws = HD ws :: TL ws’ by ( metis_tac [listTheory.LIST_NOT_NIL])
+  >> ‘fifo_rel (HD ws :: TL ws) circuit rptr wptr’ by ( metis_tac [])
+  >> fs [fifo_rel_def]
+  >> ‘word_bit 6 rptr ≠ word_bit 6 wptr’ by ( rw [] )
+  >> first_x_assum drule
+  >> disch_tac
+  >> ‘w2n ((((5 >< 0) wptr : 7 word) + 64w) - (5 >< 0) rptr : 7 word) ≤ 64’ suffices_by (
+     simp [SF WORD_ARITH_EQ_ss])
+  >> ‘((5 >< 0) rptr : 7 word) <=+ ((5 >< 0) wptr : 7 word) + 64w’ by (
+     blastLib.BBLAST_TAC)
+  >> drule wordsTheory.word_sub_w2n
+  >> disch_then (fn th => REWRITE_TAC [th])
+  >> ‘w2n (((5 >< 0) wptr: 7 word) + 64w) ≤ w2n ((5 >< 0) rptr : 7 word) +64 ’ suffices_by (
+    blastLib.BBLAST_TAC)
+  >> ‘w2n (((5 >< 0) wptr: 7 word) + 64w) = w2n ((5 >< 0) wptr : 7 word) + 64’ by (
+     rewrite_tac [wordsTheory.w2n_def]
+     >> EVAL_TAC
+     >> rewrite_tac [word_bit_add_64w, GSYM arithmeticTheory.ADD_ASSOC, arithmeticTheory.EQ_ADD_LCANCEL]
+     >> blastLib.BBLAST_TAC
+     >> EVAL_TAC)
+  >> asm_rewrite_tac []
+  >> ‘w2n ((5 >< 0) wptr : 7 word) <= w2n ((5 >< 0) rptr : 7 word)’ suffices_by (decide_tac)
+  >> rewrite_tac [GSYM wordsTheory.WORD_LS]
+  >> qpat_x_assum ‘(5 >< 0) wptr : 6 word <=+ (5 >< 0) rptr : 6 word’ mp_tac
+  >> blastLib.BBLAST_TAC
+QED
+
+(* FIXME: generalise the bit-width *)        
+Theorem fifo_rel_append:
+  ∀rptr. fifo_rel (xs ++ ys) (circuit: 6 word -> β) (rptr: 7 word) wptr ⇒
+         ∃cptr. fifo_rel xs circuit rptr cptr ∧ fifo_rel ys circuit cptr wptr
+Proof
+  Induct_on ‘xs’
+  >- ( rw [fifo_rel_def, listTheory.APPEND] )
+  >> rpt strip_tac
+  >> drule length_fifo_max
+  >> disch_tac
+  >> fs [fifo_rel_def]
+  >> first_x_assum drule
+  >> disch_then CHOOSE_TAC
+  >> EXISTS_TAC “cptr: 7 word”
+  >> ASM_CASES_TAC “xs = [] : 'b list”
+  >- (
+     ‘cptr = rptr + 1w’ by ( fs [fifo_rel_def] )
+     THEN ‘((word_bit (6 :num) (rptr :word7) ⇔ word_bit (6 :num) (cptr :word7)) ⇒ cptr >₊ rptr)’ by (
+       asm_rewrite_tac []
+       >> assume_tac $ INST [“x: 7 word” |-> “rptr : 7 word”] $ INST_TYPE [“:α” |-> “:7”] word_bit_eq_GT
+       >> first_x_assum mp_tac
+       >> EVAL_TAC)
+     THEN ‘((word_bit (6 :num) rptr ⇎ word_bit (6 :num) cptr) ⇒
+            (((5 :num) >< (0 :num)) cptr :word6) <=+ (((5 :num) >< (0 :num)) rptr :word6))’ by (
+       asm_rewrite_tac []
+       >> simp [SF WORD_EXTRACT_ss]
+       >> blastLib.BBLAST_TAC)
+     THEN asm_rewrite_tac [])
+  >> qsuff_tac ‘((word_bit 6 rptr ⇔ word_bit 6 cptr) ⇒ cptr >₊ rptr)
+                ∧ (((word_bit 6 rptr ⇎ word_bit 6 cptr) ⇒ (5 >< 0) cptr : 6 word <=+ (5 >< 0) rptr : 6 word))’
+  >- ( rw [] )
+  >>  conj_tac
+  >> ‘xs = HD xs :: TL xs’ by ( metis_tac [quantHeuristicsTheory.HD_TL_EQ_1])
+  >> qpat_assum ‘fifo_rel xs _ _ _ ∧ _’ (fn th => first_assum (fn th2 => STRIP_ASSUME_TAC $ ONCE_REWRITE_RULE [th2] th))
+  >> fs [fifo_rel_def]
+  >> disch_tac
+  >- (
+     ASM_CASES_TAC “word_bit 6 ((rptr : 7 word) + 1w) ⇔ word_bit 6 (rptr : 7 word) ”
+     >- (
+        ‘word_bit 6 (rptr + 1w) ⇔ word_bit 6 cptr’ by ( fs [] )
+        THEN first_x_assum drule
+        THEN qpat_x_assum ‘word_bit _ (rptr + 1w) ⇔ word_bit _ rptr’ mp_tac
+        THEN blastLib.BBLAST_TAC)
+     >> ‘rptr = 63w ∨ rptr = 127w’ by (
+        qpat_x_assum ‘word_bit 6 (rptr + 1w) ≠ word_bit 6 rptr’ mp_tac
+        THEN blastLib.BBLAST_TAC )
+     >> ‘word_bit 6 (rptr + 1w) ≠ word_bit 6 cptr’ by ( metis_tac [] )
+     >> first_x_assum drule
+     >> disch_tac
+     >> ‘((5 >< 0) cptr : 6 word) = (5 >< 0) (rptr + 1w)’ by (
+        NTAC 3 $ first_x_assum mp_tac >> blastLib.BBLAST_TAC)
+     >> qpat_x_assum ‘fifo_rel xs _ _ _’ assume_tac
+     >> drule length_fifo
+     >> simp [])
+  >- (
+     ASM_CASES_TAC “word_bit 6 (rptr : 7 word) ⇔ word_bit 6 ((rptr : 7 word) + 1w)”
+     >- (
+        ‘word_bit 6 (rptr + 1w) ≠ word_bit 6 cptr’ by ( fs [] )
+        THEN first_x_assum drule
+        THEN ‘((5 >< 0) cptr : 6 word) ≠ ((5 >< 0) (rptr + 1w) : 6 word)’ suffices_by (
+             blastLib.BBLAST_TAC)
+        THEN spose_not_then assume_tac
+        THEN qpat_x_assum ‘fifo_rel xs _ _ _’ assume_tac
+        THEN drule length_fifo
+        THEN simp [])
+     >> ‘cptr >+ rptr + 1w’ by ( metis_tac [] ) 
+     >> ‘(5 >< 0) rptr : 6 word = 63w’ by (
+        qpat_x_assum ‘word_bit 6 rptr ≠ word_bit 6 (rptr + 1w)’ mp_tac
+        THEN blastLib.BBLAST_TAC)
+     >> pop_assum mp_tac
+     >> blastLib.BBLAST_TAC)
+QED
+
+(* TODO: generalise the bit width *)     
+Theorem word_helper:
+  w2n (((5 >< 0) (wptr : 7 word) : 7 word) + 64w) = w2n ((5 >< 0) (wptr : 7 word) : 7 word) + 64
+Proof
+  rewrite_tac [wordsTheory.w2n_def]
+  >> EVAL_TAC
+  >> rewrite_tac [word_bit_add_64w, GSYM arithmeticTheory.ADD_ASSOC, arithmeticTheory.EQ_ADD_LCANCEL]
+  >> blastLib.BBLAST_TAC
+  >> EVAL_TAC  
+QED
+
+Theorem fifo_rel_append_if:
+  ∀rptr .
+    fifo_rel (xs : α list) (circuit :6 word -> 'a) (rptr :7 word) cptr
+    ∧ fifo_rel ys circuit cptr wptr
+    ∧ LENGTH xs + LENGTH ys ≤ 2 ** 6
+    ⇒ fifo_rel (xs ++ ys) circuit rptr wptr
+Proof
+  Induct_on ‘xs’ >- (rw [fifo_rel_def])
+  >> rpt strip_tac
+  >> rw [listTheory.APPEND, fifo_rel_def]
+  >- (
+     ASM_CASES_TAC “(ys : α list) = []”  >- ( fs [fifo_rel_def] )
+     >> ASM_CASES_TAC “word_bit 6 (cptr : 7 word) ⇔
+                       word_bit 6 (wptr : 7 word)”
+     >- (
+        ‘∃y ys'. ys = y :: ys'’ by ( metis_tac [listTheory.LIST_NOT_NIL])
+        >> ‘wptr >+ cptr’ by (fs [fifo_rel_def])
+        >> ASM_CASES_TAC “word_bit 6 (cptr: 7 word) ⇔ word_bit 6 (rptr: 7 word)”
+        >- (
+           ‘cptr >+ rptr’ by ( fs [fifo_rel_def])
+           >> first_x_assum mp_tac
+           >> qpat_x_assum ‘_ >+ _’ mp_tac
+           >> rewrite_tac [wordsTheory.WORD_HIGHER]
+           >> metis_tac [wordsTheory.WORD_LOWER_TRANS])
+        >> ‘F’ by ( metis_tac [length_fifo]))
+     >> ‘∃y ys'. ys = y :: ys'’ by ( metis_tac [listTheory.LIST_NOT_NIL])
+     >> ‘((5 >< 0) wptr : 6 word) <=+ ((5 >< 0) cptr : 6 word)’
+        by ( fs [fifo_rel_def] )
+     >> ‘word_bit 6 (rptr : 7 word) ≠ word_bit 6 (cptr : 7 word)’
+        by (metis_tac [])
+     >> ‘((5 >< 0) cptr : 6 word) ≠ ((5 >< 0) rptr : 6 word)’ by (
+        spose_not_then assume_tac
+        >> qpat_x_assum ‘fifo_rel (h :: xs) _ _ _’ assume_tac
+        >> drule length_fifo
+        >> disch_then (fn th =>
+             ‘LENGTH (h :: xs) = w2n (64w: 7 word)’ by (metis_tac [th]))
+        >> ‘1 ≤ LENGTH (ys)’ by ( fs [])
+        >> NTAC 2 $ pop_assum mp_tac
+        >> qpat_x_assum ‘_ + _ ≤ 2 ** 6’ mp_tac
+        >> EVAL_TAC
+        >> decide_tac)
+     >> ‘((5 >< 0) cptr : 6 word) <=+ ((5 >< 0) rptr : 6 word)’ by (fs [fifo_rel_def])
+     >> ‘((5 >< 0) wptr : 6 word) ≠ ((5 >< 0) cptr : 6 word)’ by (
+        spose_not_then assume_tac
+        >> drule length_fifo
+        >> disch_tac
+        >> ‘LENGTH ys = w2n (64w : 7 word)’ by (metis_tac [])
+        >> ‘1 + LENGTH xs + w2n (64w: 7 word) ≤ 2 ** 6’
+          by (fs [])
+        >> pop_assum mp_tac
+        >> EVAL_TAC
+        >> decide_tac )
+     >> ‘LENGTH (h :: xs) ≤ (w2n ((5 >< 0) cptr : 7 word) − w2n ((5 >< 0) wptr : 7 word))’ by (
+        drule length_fifo
+        >> disch_then (fn th => ‘LENGTH ys = w2n (((5 >< 0) wptr : 7 word) + 64w - ((5 >< 0) cptr : 7 word))’
+           by ( simp [th, SF WORD_ss, SF WORD_ARITH_EQ_ss]))
+        >> ‘LENGTH (h :: xs) + w2n (((5 >< 0) wptr : 7 word) + 64w - ((5 >< 0) cptr : 7 word)) ≤ 2 ** 6’
+           by ( fs [])
+        >> ‘¬ (LENGTH (h :: xs) ≤ 0)’ by ( simp [listTheory.LENGTH])
+        >> ‘LENGTH (h :: xs) ≤ 2 ** 6 - w2n (((5 >< 0) wptr : 7 word) + 64w - ((5 >< 0) cptr : 7 word))’
+           by ( metis_tac [arithmeticTheory.SUB_LEFT_LESS_EQ])
+        >> ‘((5 >< 0) cptr : 7 word) <=+ ((5 >< 0) wptr : 7 word) + 64w’ by (blastLib.BBLAST_TAC)
+        >> drule wordsTheory.word_sub_w2n
+        >> disch_then (fn th => qpat_x_assum ‘_ ≤ _ - _’ (ASSUME_TAC o REWRITE_RULE [th]))
+        >> ‘w2n ((5 >< 0) cptr : 7 word) <= w2n (((5 >< 0) wptr : 7 word) + 64w)’ by ( fs [wordsTheory.WORD_LS])
+        >> drule arithmeticTheory.SUB_SUB
+        >> disch_then (fn th => qpat_x_assum ‘_ ≤ _ - _’ (ASSUME_TAC o REWRITE_RULE [th]))
+        >> pop_assum (ASSUME_TAC o REWRITE_RULE [word_helper, arithmeticTheory.SUB_PLUS])
+        >> ‘2 ** 6 + w2n ((5 >< 0) cptr : 7 word) − w2n ((5 >< 0) wptr : 7 word) − 64 =
+            w2n ((5 >< 0) cptr : 7 word) − w2n ((5 >< 0) wptr : 7 word)’ by (EVAL_TAC >> decide_tac)
+        >> pop_assum (fn th => qpat_x_assum ‘_ ≤ _ ’ (ACCEPT_TAC o REWRITE_RULE [th])))
+     >> ‘LENGTH (h :: xs) > (w2n ((5 >< 0) cptr : 7 word) − w2n ((5 >< 0) wptr : 7 word))’ by (
+        qpat_x_assum ‘fifo_rel (h :: xs) _ _ _ ’ assume_tac
+        >> drule length_fifo
+        >> disch_then (fn th => ‘LENGTH (h :: xs) = w2n ((-1w:7 word) * ((5 >< 0) rptr : 7 word) + ((5 >< 0) cptr : 7 word) + 64w)’ by (fs [th]))
+        >> ‘LENGTH (h::xs) = w2n (((5 >< 0) cptr : 7 word) + 64w - ((5 >< 0) rptr : 7 word))’ by (
+           pop_assum mp_tac >> blastLib.BBLAST_TAC)
+        >> ‘((5 >< 0) rptr : 7 word) <=+ ((5 >< 0) cptr : 7 word) + 64w’ by (blastLib.BBLAST_TAC)
+        >> drule wordsTheory.word_sub_w2n
+        >> disch_then (fn th => qpat_x_assum ‘LENGTH (h :: xs) = _’ (ASSUME_TAC o REWRITE_RULE [th, word_helper]))
+        >> ‘w2n ((5 >< 0) cptr : 7 word) =
+            w2n (((5 >< 0) wptr : 7 word) + (((5 >< 0) cptr : 7 word) - ((5 >< 0) wptr : 7 word)))’ by (blastLib.BBLAST_TAC)
+        >> ‘¬ word_msb ((((5 >< 0) cptr : 7 word) - ((5 >< 0) wptr : 7 word))) ∧ ¬ word_msb ((5 >< 0) wptr : 7 word)’ by (
+           qpat_assum ‘(5 >< 0) wptr <=+ (5 >< 0) cptr’ mp_tac >> blastLib.BBLAST_TAC)
+        >> dxrule wordsTheory.w2n_add
+        >> disch_then dxrule
+        >> disch_then (fn th => pop_assum (ASSUME_TAC o REWRITE_RULE [th]))
+        >> pop_assum (fn th => pop_assum (ASSUME_TAC o REWRITE_RULE [th]))
+        >> ‘w2n (((5 >< 0) cptr : 7 word) - ((5 >< 0) wptr : 7 word)) = w2n ((5 >< 0) cptr : 7 word) -
+                                                                        w2n ((5 >< 0) wptr : 7 word)’
+           by (  irule wordsTheory.word_sub_w2n
+              >> qpat_x_assum ‘(5 >< 0) wptr <=+ (5 >< 0) cptr’ mp_tac
+              >> blastLib.BBLAST_TAC)
+        >> pop_assum (fn th => pop_assum (ASSUME_TAC o REWRITE_RULE [th]))
+        >> ‘w2n ((5 >< 0) rptr : 7 word) ≤ 64’ by (
+           ‘64 = w2n (64w : 7 word)’ by (EVAL_TAC)
+           >> once_asm_rewrite_tac []
+           >> irule $ iffLR wordsTheory.WORD_LS
+           >> blastLib.BBLAST_TAC)
+        >> drule arithmeticTheory.LESS_EQ_ADD_SUB
+        >> disch_then (fn th => qpat_x_assum ‘LENGTH (h :: xs) = _’ (ASSUME_TAC o REWRITE_RULE [th]))
+        >> ‘w2n ((5 >< 0) rptr : 7 word) < 64’ by (
+           ‘64:num = 2 ** (SUC 5 - 0)’ by EVAL_TAC
+           >> once_asm_rewrite_tac []
+           >> irule wordsTheory.WORD_EXTRACT_LT)
+        >> ‘0 < 64 - w2n ((5 >< 0) rptr : 7 word)’ by ( pop_assum mp_tac >> DECIDE_TAC )
+        >> ‘0 < w2n ((5 >< 0) wptr : 7 word) + (64 − w2n ((5 >< 0) rptr : 7 word))’ by (
+           pop_assum mp_tac >> DECIDE_TAC)
+        >> ‘LENGTH (h :: xs) > (w2n ((5 >< 0) cptr : 7 word) − w2n ((5 >< 0) wptr : 7 word))’ by (
+           qpat_x_assum ‘LENGTH (h :: xs) = _’ mp_tac
+           >> pop_assum mp_tac
+           >> DECIDE_TAC))
+     >> DECIDE_TAC)
+  >- (
+     ASM_CASES_TAC “(ys : α list) = []”
+     >- ( ‘cptr = wptr’ by ( fs [fifo_rel_def] ) THEN fs [fifo_rel_def] )
+     >> ‘∃y ys'. ys = y :: ys'’ by ( metis_tac [listTheory.LIST_NOT_NIL])
+     >> ‘fifo_rel (y :: ys') circuit cptr wptr’ by ( fs [] )
+     >> pop_assum (STRIP_ASSUME_TAC o REWRITE_RULE [fifo_rel_def])
+     >> ASM_CASES_TAC “word_bit (dimindex (:7) - 1) (cptr : 7 word) ⇔ word_bit (dimindex (:7) - 1) (wptr : 7 word)”
+     >- (
+        first_x_assum drule
+        >> disch_tac
+        >> ‘word_bit (dimindex (:7) - 1) rptr ≠ word_bit (dimindex (:7) - 1) cptr’ by ( fs [] )
+        >> qpat_assum ‘fifo_rel (h :: xs) _ _ _’ (STRIP_ASSUME_TAC o REWRITE_RULE [fifo_rel_def])
+        >> first_x_assum drule
+        >> disch_tac
+        >> ‘LENGTH ys = w2n ((5 >< 0) wptr : 7 word) - w2n ((5 >< 0) cptr : 7 word)’ by (
+           qpat_x_assum ‘fifo_rel ys _ _ _’ assume_tac
+           THEN drule length_fifo
+           THEN ‘word_bit 6 wptr ⇔ word_bit 6 cptr’ by ( fs [] )
+           THEN asm_rewrite_tac [] 
+           THEN ‘w2n (-1w * ((5 >< 0) cptr: 7 word) + ((5 >< 0) wptr : 7 word)) = w2n (((5 >< 0) wptr : 7 word) - ((5 >< 0) cptr : 7 word))’
+                by (blastLib.BBLAST_TAC)
+           THEN pop_assum (fn th => asm_rewrite_tac [th])
+           THEN DEP_REWRITE_TAC [wordsTheory.word_sub_w2n]
+           THEN qpat_x_assum ‘wptr >+ cptr’ mp_tac
+           THEN pop_assum mp_tac
+           THEN blastLib.BBLAST_TAC)
+        >> ‘((5 >< 0) rptr : 7 word) ≠ ((5 >< 0) cptr : 7 word)’ by (
+           spose_not_then assume_tac
+           THEN ‘word_bit 6 rptr ≠ word_bit 6 cptr’ by ( fs [] )
+           THEN qpat_x_assum ‘fifo_rel (h :: xs) _ _ _’ assume_tac
+           THEN drule length_fifo
+           THEN disch_tac
+           THEN ‘LENGTH (h :: xs) = w2n (64w : 7 word)’ by ( fs  [] )
+           THEN ‘w2n (64w: 7 word) + LENGTH ys ≤ 2 ** 6’ by ( fs [] )
+           THEN ‘LENGTH ys = 0’ by (pop_assum mp_tac >> EVAL_TAC >> DECIDE_TAC)
+           THEN ‘F’ by ( fs [] ))
+        >> ‘LENGTH (h :: xs) = w2n (((5 >< 0) cptr : 7 word)) + 64 - w2n ((5 >< 0) rptr : 7 word)’
+           by (
+           qpat_x_assum ‘fifo_rel (h :: xs) _ _ _’ assume_tac
+           THEN drule length_fifo
+           THEN ‘word_bit 6 cptr ≠ word_bit 6 rptr’ by ( fs [] )
+           THEN ‘((5 >< 0) cptr : 6 word) ≠ ((5 >< 0) rptr : 6 word)’ by (
+             qpat_x_assum ‘(5 >< 0) rptr ≠ (5 >< 0) cptr’ mp_tac >> blastLib.BBLAST_TAC )
+           THEN asm_rewrite_tac []
+           THEN ‘w2n ((-1w: 7 word) * ((5 >< 0) rptr : 7 word) + (((5 >< 0) cptr : 7 word) + 64w)) =
+                 w2n ((((5 >< 0) cptr : 7 word) + 64w) - ((5 >< 0) rptr : 7 word))’
+             by ( blastLib.BBLAST_TAC )
+           THEN pop_assum (fn th => REWRITE_TAC [th])
+           THEN ‘w2n (((5 >< 0) cptr : 7 word) + 64w − ((5 >< 0) rptr : 7 word)) =
+                 w2n (((5 >< 0) cptr : 7 word) + 64w) − w2n ((5 >< 0) rptr : 7 word)’ suffices_by ( simp [word_helper] )
+           THEN DEP_REWRITE_TAC [wordsTheory.word_sub_w2n]
+           THEN blastLib.BBLAST_TAC)
+        >> ‘LENGTH ys ≤ 64 - LENGTH (h :: xs)’ by (
+           qpat_x_assum ‘_ + _ ≤ 2 ** 6’ mp_tac THEN EVAL_TAC THEN decide_tac)
+        >> pop_assum mp_tac
+        >> qpat_assum ‘LENGTH (h :: xs) = _’ (fn th => REWRITE_TAC [th])
+        >> ‘w2n ((5 >< 0) rptr : 7 word) ≤ (w2n ((5 >< 0) cptr : 7 word) + 64)’ by (
+           rewrite_tac [GSYM word_helper, GSYM wordsTheory.WORD_LS]
+           THEN blastLib.BBLAST_TAC )
+        >> dxrule arithmeticTheory.SUB_SUB
+        >> disch_then (fn th => REWRITE_TAC [th])
+        >> ‘64 + w2n ((5 >< 0) rptr: 7 word) − (w2n ((5 >< 0) cptr: 7 word) + 64) =
+            w2n ((5 >< 0) rptr : 7 word) - w2n ((5 >< 0) cptr : 7 word)’ by (
+           rewrite_tac [SPEC “w2n ((5 >< 0) (cptr : 7 word) : 7 word)” arithmeticTheory.ADD_COMM]
+           THEN rewrite_tac [arithmeticTheory.SUB_PLUS]
+           THEN rewrite_tac [SPEC “w2n ((5 >< 0) (rptr : 7 word) : 7 word)” $ SPEC “64:num” arithmeticTheory.ADD_COMM]
+           THEN ‘64:num ≤ 64:num’ by decide_tac
+           THEN drule arithmeticTheory.LESS_EQ_ADD_SUB
+           THEN disch_then (fn th => REWRITE_TAC [th])
+           THEN EVAL_TAC)
+        >> pop_assum (fn th => REWRITE_TAC [th])
+        >> qpat_assum ‘LENGTH ys = _’ (fn th => REWRITE_TAC [th])
+        >> REWRITE_TAC [arithmeticTheory.LE_SUB_RCANCEL, GSYM wordsTheory.WORD_LS]
+        >> qpat_assum ‘wptr >+ cptr’ mp_tac
+        >> qpat_assum ‘word_bit _ cptr ⇔ word_bit _ wptr’ mp_tac
+        >> blastLib.BBLAST_TAC)
+     >> ‘((dimindex (:6) − 1 >< 0) wptr : 6 word) ≤₊ ((dimindex (:6) − 1 >< 0) cptr : 6 word)’ by (
+        first_x_assum drule >> simp [] )
+     >> ‘word_bit (dimindex (:7) - 1) rptr ⇔ word_bit (dimindex (:7) - 1) cptr’ by (
+        qpat_assum ‘word_bit _ cptr ≠ word_bit _ wptr’ mp_tac
+        THEN qpat_assum ‘word_bit _ rptr ≠ word_bit _ wptr’ mp_tac
+        THEN EVAL_TAC
+        THEN metis_tac [])
+     >> ‘((5 >< 0) wptr : 6 word) ≠ ((5 >< 0) cptr : 6 word)’ by (
+        spose_not_then assume_tac
+        THEN qpat_x_assum ‘fifo_rel ys _ _ _’ assume_tac
+        THEN drule length_fifo
+        THEN ‘word_bit 6 wptr ≠ word_bit 6 cptr’ by (
+          qpat_x_assum ‘word_bit _ cptr ≠ word_bit _ wptr’ mp_tac >> EVAL_TAC >> simp [] )
+        THEN disch_then (fn th => ‘LENGTH ys = w2n (64w: 7 word)’ by (simp [th]))
+        THEN fs [])
+     >> ‘LENGTH ys = 64 + w2n (((5 >< 0) wptr : 7 word)) − w2n ((5 >< 0) cptr : 7 word)’
+        by (
+        qpat_x_assum ‘fifo_rel ys _ _ _’ assume_tac        
+        THEN drule length_fifo
+        THEN ‘word_bit 6 wptr ≠ word_bit 6 cptr’ by (
+             qpat_x_assum ‘word_bit _ cptr ≠ word_bit _ wptr’ mp_tac >> EVAL_TAC >> simp [] )
+        THEN disch_then (fn th => ‘LENGTH ys = w2n (-1w * ((5 >< 0) cptr : 7 word) + (((5 >< 0) wptr : 7 word) + 64w))’ by (
+             simp [th]))
+        THEN ‘w2n (-1w * ((5 >< 0) cptr : 7 word) + (((5 >< 0) wptr : 7 word) + 64w)) =
+              w2n ((((5 >< 0) wptr : 7 word) + 64w) - ((5 >< 0) cptr : 7 word))’
+          by (blastLib.BBLAST_TAC)
+        THEN pop_assum (fn th => ‘LENGTH ys = w2n ((((5 >< 0) wptr : 7 word) + 64w) - ((5 >< 0) cptr : 7 word))’ by (fs [th]))
+        THEN ‘((5 >< 0) cptr : 7 word) <=+ ((5 >< 0) wptr : 7 word) + 64w’ by ( blastLib.BBLAST_TAC )
+        THEN dxrule wordsTheory.word_sub_w2n
+        THEN fs [word_helper])
+     >> ‘LENGTH (h :: xs) ≤ 64 - LENGTH ys’ by (
+        qpat_x_assum ‘LENGTH _ + LENGTH _ ≤ 2 ** 6’ mp_tac >> EVAL_TAC >> decide_tac)
+     >> ‘LENGTH (h :: xs) ≤ w2n ((5 >< 0) cptr : 7 word) - w2n ((5 >< 0) wptr : 7 word)’ by (
+        qpat_x_assum ‘LENGTH (h :: xs) ≤ 64 - _’ mp_tac
+        THEN qpat_x_assum ‘LENGTH ys = _’ (fn th => REWRITE_TAC [th])
+        THEN ‘w2n ((5 >< 0) cptr : 7 word) ≤ 64 + w2n ((5 >< 0) wptr : 7 word)’ by (
+             once_rewrite_tac [arithmeticTheory.ADD_COMM]
+             >> rewrite_tac [GSYM word_helper, GSYM wordsTheory.WORD_LS]
+             >>blastLib.BBLAST_TAC)
+        THEN drule arithmeticTheory.SUB_SUB
+        THEN disch_then (fn th => REWRITE_TAC [th, arithmeticTheory.SUB_PLUS])
+        THEN decide_tac)
+     >> ‘LENGTH (h :: xs) = w2n ((5 >< 0) cptr : 7 word) - w2n ((5 >< 0) rptr : 7 word)’ by (
+        qpat_x_assum ‘fifo_rel (h :: xs) _ _ _’ assume_tac
+        >> drule length_fifo
+        >> ‘word_bit 6 cptr ⇔ word_bit 6 rptr’ by ( fs [] )
+        >> ‘w2n (-1w * ((5 >< 0) rptr : 7 word) + ((5 >< 0) cptr : 7 word)) =
+            w2n (((5 >< 0) cptr : 7 word) - ((5 >< 0) rptr : 7 word))’ by (blastLib.BBLAST_TAC)
+        >> asm_rewrite_tac []
+        >> DEP_REWRITE_TAC [wordsTheory.word_sub_w2n]
+        >> qpat_x_assum ‘fifo_rel (h :: xs) _ _ _’ (STRIP_ASSUME_TAC o REWRITE_RULE [fifo_rel_def])
+        >> first_x_assum drule
+        >> qpat_x_assum ‘word_bit _ rptr ⇔ word_bit _ cptr’ mp_tac
+        >> EVAL_TAC
+        >> blastLib.BBLAST_TAC)
+     >> ‘w2n ((5 >< 0) cptr : 7 word) − w2n ((5 >< 0) rptr : 7 word) ≤ w2n ((5 >< 0) cptr : 7 word) − w2n ((5 >< 0) wptr : 7 word)’
+       by ( fs [] )
+     >> pop_assum (ASSUME_TAC o REWRITE_RULE [arithmeticTheory.LE_SUB_LCANCEL, GSYM wordsTheory.WORD_LS])
+     >> ‘¬ (((5 >< 0) cptr : 7 word) ≤₊ ((5 >< 0) rptr : 7 word))’ by (
+        qpat_assum ‘fifo_rel (h :: xs) _ _ _’ (STRIP_ASSUME_TAC o REWRITE_RULE [fifo_rel_def])
+        >> first_x_assum drule
+        >> qpat_x_assum ‘word_bit _ rptr ⇔ word_bit _ cptr’ mp_tac
+        >> EVAL_TAC >> blastLib.BBLAST_TAC)
+     >> fs []
+     >> qpat_x_assum ‘_ <=+ _’ mp_tac
+     >> blastLib.BBLAST_TAC)
+  >- (
+     qpat_x_assum ‘fifo_rel (h :: xs) _ _ _’ (STRIP_ASSUME_TAC o REWRITE_RULE [fifo_rel_def])
+     >> qpat_x_assum ‘circuit _ = h’ mp_tac
+     >> EVAL_TAC )
+  >> first_assum irule
+  >> ‘LENGTH xs + LENGTH ys ≤ 2 ** 6’ by (
+     qpat_x_assum ‘LENGTH _ + LENGTH _ ≤ 2 ** 6’ mp_tac
+     >> rewrite_tac [listTheory.LENGTH]                        
+     >> decide_tac)
+  >> fs [fifo_rel_def]                                                
 QED
 
 val core_init_tm = add_x_inits “<|fmt_fifo_regfile := K 0w; rx_fifo_regfile := K 0w; |>”
@@ -660,10 +1025,6 @@ Theorem mstate_with_fnums:
 Proof
   simp []
 QED
-
-(* prove that i2c_tick (HOL4) simulates i2c_core (shallowly embedded)
- - provide a relation ‘core_sim_rel’ (relate abstract and concrete states)
- *)
 
 (* TODO: put into CakeML/hardware? (at the very least, stop making copies) *)
 Theorem mk_circuit_cstep:
@@ -1063,9 +1424,24 @@ Proof
      >> drule_then assume_tac i2c_tick_rx_fifo
      >> simp []
      >> rpt IF_CASES_TAC
-     >> rpt $ qpat_x_assum ‘_ ∧ _’ strip_assume_tac
-     >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat]
-     >> cheat
+     >- (
+        rpt $ qpat_x_assum ‘_ ∧ _’ strip_assume_tac
+        >> simp [Abbr ‘cstate1_seq’,i2c_core_ffs1_rx_fifo, cstate_rx_fifo_regfile, cstate_rx_fifo_rptr, cstate_rx_fifo_wptr]
+        >> irule fifo_rel_append_if
+        >> conj_tac
+        >- (
+           qpat_x_assum ‘LENGTH _ < 64’ mp_tac
+           >> ‘mstate.rx_fifo ≠ []’ by ( fs [rich_listTheory.NULL_EQ_NIL] )
+           >> drule rich_listTheory.LENGTH_TL_LT
+           >> simp [listTheory.LENGTH])
+        >> EXISTS_TAC “cstate.rx_fifo.wptr : 7 word”
+        >> conj_tac
+        >- (
+
+
+
+      )
+    )
   ) (* fifo_rel rx_fifo *)
   >- (
     cheat

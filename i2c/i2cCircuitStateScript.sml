@@ -256,7 +256,7 @@ Definition fifo_rel_def:
 ∧ (fifo_rel (w :: ws) circuit rptr wptr ⇔
      ((word_bit (dimindex(:'c) - 1) rptr = word_bit (dimindex(:'c) - 1) wptr) ⇒ wptr >+ rptr)
    ∧ ((word_bit (dimindex(:'c) - 1) rptr ≠ word_bit (dimindex(:'c) - 1) wptr) ⇒
-      ((dimindex(:'a) - 1 >< 0) wptr : 'a word) <+ ((dimindex(:'a) - 1 >< 0) rptr :'a word))
+      ((dimindex(:'a) - 1 >< 0) wptr : 'a word) <=+ ((dimindex(:'a) - 1 >< 0) rptr :'a word))
    ∧ (circuit $ ((dimindex(:'a) - 1 >< 0) rptr : 'a word) = w)
    ∧ fifo_rel ws circuit (rptr + 1w) wptr)
 End
