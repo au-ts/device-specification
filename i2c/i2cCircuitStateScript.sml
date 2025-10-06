@@ -198,6 +198,11 @@ Datatype:
     fmt_fifo : fifo2;
     rx_fifo : fifo;
     cnt_gt_one: bool;
+    fmt_threshold_q : 1 word;
+    fmt_threshold_d : 1 word;
+    rx_threshold_q : 1 word;
+    rx_threshold_d : 1 word;
+    scl_i_q : 1 word;
     fmt_fifo_regfile : 6 word -> 13 word;
     rx_fifo_regfile : 6 word -> 8 word;
   |>
@@ -273,10 +278,6 @@ Definition core_sim_rel_def:
   ∧ machine.stretch_idle_cnt = circuit.stretch_idle_cnt
   ∧ machine.byte_index = circuit.byte_index
   ∧ machine.read_byte = circuit.read_byte
-(*
-  ∧ machine.read_byte_clr = circuit.read_byte_clr
-  ∧ machine.shift_data_en = circuit.shift_data_en
- *)
   ∧ machine.scl_rx_val = circuit.scl_rx_val
   ∧ machine.sda_rx_val = circuit.sda_rx_val
   ∧ machine.regs = circuit.regs

@@ -3,7 +3,7 @@ open ffiTheory;
 open i2cRegsTheory;
 
 val _ = new_theory("i2cCore");
-
+ 
 Datatype:
   txState =
     ClockLow
@@ -201,16 +201,21 @@ Definition i2c_tick_def:
     if st.regs.ctrl.enabletarget = 1w then INL FFI_failed else
     let
       fnums = st.fnums;
-      fmt_fifo' = if st.buffered_notif = SOME fdata_write ∧ LENGTH st.fmt_fifo < 64
-                  then flip SNOC st.fmt_fifo
-                               $  w2w st.regs.fdata.fbyte
-                               || w2w ( st.regs.fdata.start << 8  )
-                               || w2w ( st.regs.fdata.stop  << 9  )
-                               || w2w ( st.regs.fdata.read  << 10 )
-                               || w2w ( st.regs.fdata.rcont << 11 )
-                               || w2w ( st.regs.fdata.nakok << 12 )
-                  else st.fmt_fifo;
-      fmt_fifo'' = if st.fsm_state = PopFmtFifo then TL fmt_fifo' else fmt_fifo';
+
+      fmt_fifo' = if st.fsm_state = PopFmtFifo ∧ ¬ NULL st.fmt_fifo then TL st.fmt_fifo else st.fmt_fifo;
+
+      fmt_fifo'' = if st.buffered_notif = SOME fdata_write ∧ LENGTH st.fmt_fifo < 64
+                   then flip SNOC fmt_fifo'
+                             $  (w2w st.regs.fdata.fbyte
+                             || w2w st.regs.fdata.start << 8
+                             || w2w st.regs.fdata.stop  << 9
+                             || w2w st.regs.fdata.read  << 10
+                             || w2w st.regs.fdata.rcont << 11
+                             || w2w st.regs.fdata.nakok << 12)
+                   else fmt_fifo';
+
+      fmt_fifo''' = if st.buffered_notif = SOME fifo_ctrl_write ∧ st.regs.fifo_ctrl.fmtrst = 1w
+                    then [] else fmt_fifo'';
 
       delay = <|
                  setup_start := (w2w st.regs.timing1.t_r : 20 word) + w2w st.regs.timing2.tsu_sta ;
@@ -312,85 +317,88 @@ Definition i2c_tick_def:
                                           else Transmitting ClockLow
 
                    | Receiving
-                     ReadClockLow      => if st.counter >+ 1w then Receiving ReadClockLow
+                     ReadClockLow      => if st.counter ≠ 1w then Receiving ReadClockLow
                                           else Receiving ReadClockPulse
 
                    | Receiving
-                     ReadClockPulse    => if st.counter >+ 1w then Receiving ReadClockPulse
+                     ReadClockPulse    => if st.counter ≠ 1w then Receiving ReadClockPulse
                                           else Receiving ReadHoldBit
 
                    | Receiving
-                     ReadHoldBit       => if st.counter >+ 1w then Receiving ReadHoldBit
-                                          else if st.bit_index = 0w then Receiving HostClockLowAck
-                                          else Receiving ReadClockLow
+                     ReadHoldBit       =>  if st.counter ≠ 1w then Receiving ReadHoldBit
+                                           else if st.bit_index = 0w then Receiving HostClockLowAck
+                                           else Receiving ReadClockLow
 
                    | Receiving
-                     HostClockLowAck   => if st.counter >+ 1w then Receiving HostClockLowAck
-                                         else Receiving HostClockPulseAck
+                     HostClockLowAck   => if st.counter ≠ 1w then Receiving HostClockLowAck
+                                          else Receiving HostClockPulseAck
 
                    | Receiving
-                     HostClockPulseAck => if st.counter >+ 1w then Receiving HostClockPulseAck
+                     HostClockPulseAck => if st.counter ≠ 1w then Receiving HostClockPulseAck
                                           else Receiving HostHoldBitAck
 
                    | Receiving
-                     HostHoldBitAck    => if st.counter >+ 1w then Receiving HostHoldBitAck
+                     HostHoldBitAck    => if st.counter ≠ 1w then Receiving HostHoldBitAck
                                           else if st.byte_index = 1w ∧ fmt_flag_stop_after then Stopping ClockStop
-                                          else if st.byte_index = 1w ∧ ¬fmt_flag_stop_after  then PopFmtFifo
+                                          else if st.byte_index = 1w ∧ ¬ fmt_flag_stop_after then PopFmtFifo
                                           else Receiving ReadClockLow
 
                    | Stopping
-                     ClockStop         => if st.counter >+ 1w then Stopping ClockStop
+                     ClockStop         => if st.counter ≠ 1w then Stopping ClockStop
                                           else Stopping SetupStop
 
                    | Stopping
-                     SetupStop         => if st.counter >+ 1w then Stopping SetupStop
+                     SetupStop         => if st.counter ≠ 1w then Stopping SetupStop
                                           else Stopping HoldStop
 
                    | Stopping
-                     HoldStop          => if st.counter >+ 1w then Stopping HoldStop
+                     HoldStop          => if st.counter ≠ 1w then Stopping HoldStop
                                           else if st.regs.ctrl.enablehost = 0w then Idle
                                           else PopFmtFifo
 
                    | Starting
-                     SetupStart        => if st.counter >+ 1w then Starting SetupStart
+                     SetupStart        => if st.counter ≠ 1w then Starting SetupStart
                                           else Starting HoldStart
 
                    | Starting
-                     HoldStart         => if st.counter >+ 1w then Starting HoldStart
+                     HoldStart         => if st.counter ≠ 1w then Starting HoldStart
                                           else Starting ClockStart
 
                    | Starting
-                     ClockStart        => if st.counter >+ 1w then Starting ClockStart
+                     ClockStart        => if st.counter ≠ 1w then Starting ClockStart
                                           else Transmitting ClockLow
 
                    | Transmitting
-                     ClockLow          => if st.counter >+ 1w then Transmitting ClockLow
+                     ClockLow          => if st.counter ≠ 1w then Transmitting ClockLow
                                           else if st.pend_restart then Starting SetupStart
                                           else Transmitting ClockPulse
 
                    | Transmitting
-                     ClockPulse        => if st.counter >+ 1w then Transmitting ClockPulse
+                     ClockPulse        => if st.counter ≠ 1w then Transmitting ClockPulse
                                           else Transmitting HoldBit
 
                    | Transmitting
-                     HoldBit           => if st.counter >+ 1w then Transmitting HoldBit
+                     HoldBit           => if st.counter ≠ 1w then Transmitting HoldBit
                                           else if st.bit_index = 0w then Transmitting ClockLowAck
                                           else Transmitting ClockLow
 
                    | Transmitting
-                     ClockLowAck       => if st.counter >+ 1w then Transmitting ClockLowAck else Transmitting ClockPulseAck
+                     ClockLowAck       => if st.counter ≠ 1w then Transmitting ClockLowAck
+                                          else Transmitting ClockPulseAck
 
                    | Transmitting
-                     ClockPulseAck     => if st.counter >+ 1w then Transmitting ClockPulseAck else Transmitting HoldDevAck
+                     ClockPulseAck     => if st.counter ≠ 1w then Transmitting ClockPulseAck
+                                          else Transmitting HoldDevAck
 
                    | Transmitting
-                     HoldDevAck        => if st.counter >+ 1w then Transmitting HoldDevAck
+                     HoldDevAck        => if st.counter ≠ 1w then Transmitting HoldDevAck
                                           else if ¬ NULL st.fmt_fifo ∧ word_bit 9 $ HD st.fmt_fifo then Stopping ClockStop
                                           else PopFmtFifo
 
                    | PopFmtFifo        => if st.regs.ctrl.enablehost = 0w then Stopping ClockStop
                                           else if (LENGTH st.fmt_fifo = 1) then Idle
                                           else Active;
+
       read_byte_clr' = ( st.fsm_state = Receiving ReadHoldBit ∧ st.counter = 1w ∧ st.bit_index = 0w );
       shift_data_en' = ( st.fsm_state = Receiving ReadClockPulse ∧ st.counter = 1w ) ;
       (* fnums 1 used to indicate sda_i *)
@@ -402,6 +410,7 @@ Definition i2c_tick_def:
                             else
                               st.read_byte;
 
+
       (* `Pass` is set to 0, which means that a value cannot be removed from the FIFO
        * on the same clock cycle that it is inserted, and so this needs to go first so
        * that it can't see any newly-inserted values. *)
@@ -412,12 +421,39 @@ Definition i2c_tick_def:
       rx_fifo'' = if st.fsm_state = Receiving ReadHoldBit ∧ fsm_state' = Receiving HostClockLowAck ∧ LENGTH st.rx_fifo < 64
                   then flip SNOC rx_fifo' $ st.read_byte else rx_fifo';
 
-      regs' = if (st.fsm_state = Transmitting ClockPulseAck ∧ ¬ (word_bit 12 $ HD st.fmt_fifo) ∧ word_bit 0 sda_i)
-              then st.regs with <| intr_state := (st.regs.intr_state with <| nak := 1w |>) |>
-              else if ( st.fsm_state = Stopping HoldStop
-                      ∨ st.fsm_state = Starting SetupStart ∧ log_start ∧ st.pend_restart)
-              then st.regs with <| intr_state := (st.regs.intr_state with <| cmd_complete := 1w |>) |>
-              else st.regs;
+      rx_fifo''' = if st.buffered_notif = SOME fifo_ctrl_write ∧ st.regs.fifo_ctrl.rxrst = 1w
+                   then [] else rx_fifo'';
+
+      nak' = if (st.fsm_state = Transmitting ClockPulseAck ∧ (NULL st.fmt_fifo ∨ ¬ (word_bit 12 $ HD st.fmt_fifo)) ∧ word_bit 0 sda_i)
+             then 1w
+             else st.regs.intr_state.nak;
+
+      cmd_complete' = if ( st.fsm_state = Stopping HoldStop
+                           ∨ st.fsm_state = Starting SetupStart ∧ log_start ∧ st.pend_restart)
+                      then 1w else st.regs.intr_state.cmd_complete;
+
+      regs' = st.regs with
+                <|
+                  intr_state :=
+                  st.regs.intr_state with
+                    <|
+                      fmt_threshold := n2w $ fnums 2 ;
+                      rx_threshold := n2w $ fnums 3;
+                      fmt_overflow := n2w $ fnums 4;
+                      rx_overflow := n2w $ fnums 5;
+                      nak := nak' ;
+                      scl_interference := n2w $ fnums 6;
+                      sda_interference := n2w $ fnums 7;
+                      stretch_timeout := n2w $ fnums 8;
+                      sda_unstable := n2w $ fnums 9;
+                      cmd_complete := cmd_complete';
+                      tx_stretch := n2w $ fnums 10;
+                      tx_overflow := n2w $ fnums 11;
+                      acq_full := n2w $ fnums 12;
+                      unexp_stop := n2w $ fnums 13;
+                      host_timeout := n2w $ fnums 14
+                    |>
+                |>;
 
       pend_restart' = if st.pend_restart ∧ st.regs.ctrl.enablehost = 0w ∨ log_start then F
                       else if req_restart then T
@@ -431,13 +467,13 @@ Definition i2c_tick_def:
                    else if bit_decr then st.bit_index - 1w
                    else st.bit_index;
 
-      fnums' = λn. fnums (n + 2);
+      fnums' = λn. fnums (n + 15);
     in
       INR <|
         fnums := fnums';
         buffered_notif := NONE;
-        rx_fifo := rx_fifo'';
-        fmt_fifo := fmt_fifo'';
+        rx_fifo := rx_fifo''';
+        fmt_fifo := fmt_fifo''';
         regs := regs';
         counter := counter';
         fsm_state := fsm_state';
@@ -473,56 +509,9 @@ Theorem i2c_tick_unused_fnums:
   i2c_tick notif (st with fnums := fnums) =
   SUM_MAP I (\st'. st' with fnums := (\i. fnums (i + n))) (i2c_tick notif st)
 Proof
-  qexists `2`
+  qexists `15`
   >> Cases_on `st.regs.ctrl.enabletarget = 1w`
   >> simp [i2c_tick_def, SF ETA_ss]
 QED
-
-(*
-Definition i2c_tick_comb_def:
-  i2c_tick_comb (hwext_notif: i2c_hwext_notif option) (st: i2c_state) =
-    let
-      fnums = st.fnums;
-      fmt_flag_read_bytes   = (¬ NULL st.fmt_fifo ∧ word_bit 10 $ HD st.fmt_fifo);
-      fmt_byte : 8 word     = if ¬ NULL st.fmt_fifo then (7 >< 0) (HD st.fmt_fifo) else 0w;
-      byte_clr = (st.fsm_state = Active ∧ fmt_flag_read_bytes);
-      byte_decr = (st.fsm_state = Receiving HostHoldBitAck ∧ st.counter = 1w ∧ st.byte_index ≠ 1w);
-      byte_num = if ¬fmt_flag_read_bytes then (0w : 9 word)
-                 else if fmt_byte = 0w then (256w : 9 word)
-                 else w2w fmt_byte;
-      byte_index' = if byte_clr then byte_num
-                    else if byte_decr then st.byte_index - 1w
-                    else st.byte_index;
-      read_byte_clr' = ( st.fsm_state = Receiving ReadHoldBit ∧ st.counter = 1w ∧ st.bit_index = 0w );
-      shift_data_en' = ( st.fsm_state = Receiving ReadClockPulse ∧ st.counter = 1w ) ;
-      sda_i : 1 word = n2w $ fnums 1;
-      read_byte' : 8 word = if read_byte_clr' then 0w
-                            else if shift_data_en' then
-                              ((6 >< 0) st.read_byte : 7 word) @@ sda_i
-                            else
-                              st.read_byte;
-      fnums' = λn. fnums (n + 1);
-    in
-      <|
-        fnums := fnums';
-        buffered_notif := NONE;
-        rx_fifo := rx_fifo'';
-        fmt_fifo := fmt_fifo'';
-        regs := regs';
-        counter := counter';
-        fsm_state := fsm_state';
-        pend_restart := pend_restart';
-        trans_started := trans_started';
-        bit_index := bit_index';
-        stretch_idle_cnt := stretch_idle_cnt';
-        byte_index := byte_index';
-        read_byte := read_byte';
-        read_byte_clr := read_byte_clr';
-        shift_data_en := shift_data_en';
-        scl_rx_val := scl_rx_val';
-        sda_rx_val := sda_rx_val';
-      |>
-End
-*)
 
 val _ = export_theory();

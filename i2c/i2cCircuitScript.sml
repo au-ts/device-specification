@@ -101,8 +101,10 @@ Definition fmt_fifo_rptr_ff_def:
     s' with fmt_fifo := s'.fmt_fifo with rptr := 0w
   else if s'.fmt_fifo.counter2.rptr_wrap then
     s' with fmt_fifo := s'.fmt_fifo with rptr := s'.fmt_fifo.counter2.rptr_wrap_cnt
-  else
+  else if s'.fmt_fifo.incr_rptr then
     s' with fmt_fifo := s'.fmt_fifo with rptr := s.fmt_fifo.rptr + 1w
+  else
+    s' with fmt_fifo := s'.fmt_fifo with rptr := s.fmt_fifo.rptr
 End
 
 Definition fmt_fifo_wvalid_def:
@@ -162,8 +164,10 @@ Definition fmt_fifo_wptr_ff_def:
     s' with fmt_fifo := s'.fmt_fifo with wptr := 0w
   else if s'.fmt_fifo.counter2.wptr_wrap then
     s' with fmt_fifo := s'.fmt_fifo with wptr := s'.fmt_fifo.counter2.wptr_wrap_cnt
-  else
+  else if s'.fmt_fifo.incr_wptr then
     s' with fmt_fifo := s'.fmt_fifo with wptr := s.fmt_fifo.wptr + 1w
+  else
+    s' with fmt_fifo := s'.fmt_fifo with wptr := s.fmt_fifo.wptr
 End
 
 Definition i2c_core_delay_comb_def:
@@ -356,9 +360,10 @@ Definition fifo_depth_def:
     64w - w2w ((5 >< 0) s.fmt_fifo.rptr : 6 word) + w2w ((5 >< 0) s.fmt_fifo.wptr :  6 word)
 End
 
+(* FIXME: fix the name *)        
 Definition counter_gt_one_comb_def:
   counter_gt_one_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s':i2c_circuit_state) =
-  s' with cnt_gt_one := (1w <+ s.counter)
+  s' with cnt_gt_one := (s.counter ≠ 1w)
 End
 
 Definition i2c_core_next_state_def:
@@ -525,8 +530,10 @@ Definition i2c_core_rx_fifo_rptr_ff_def:
     s' with rx_fifo := s'.rx_fifo with rptr := 0w
   else if s'.rx_fifo.counter.rptr_wrap then
     s' with rx_fifo := s'.rx_fifo with rptr := s'.rx_fifo.counter.rptr_wrap_cnt
-  else
+  else if s'.rx_fifo.incr_rptr then
     s' with rx_fifo := s'.rx_fifo with rptr := s.rx_fifo.rptr + 1w
+  else
+    s' with rx_fifo := s'.rx_fifo with rptr := s.rx_fifo.rptr    
 End
 
 Definition i2c_core_rx_fifo_wvalid_comb_def:
@@ -546,7 +553,7 @@ End
 Definition i2c_core_rx_fifo_full_comb_def:
   i2c_core_rx_fifo_full_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with rx_fifo := s'.rx_fifo with full :=
-  ((word_bit 5 s.rx_fifo.wptr ≠ word_bit 5 s.rx_fifo.rptr) ∧
+  ((word_bit 6 s.rx_fifo.wptr ≠ word_bit 6 s.rx_fifo.rptr) ∧
    ((5 >< 0) s.rx_fifo.wptr : 6 word = (5 >< 0) s.rx_fifo.rptr : 6 word))
 End
 
@@ -583,22 +590,23 @@ Definition i2c_core_rx_fifo_wptr_ff_def:
     s' with rx_fifo := s'.rx_fifo with wptr := 0w
   else if s'.rx_fifo.counter.wptr_wrap then
     s' with rx_fifo := s'.rx_fifo with wptr := s'.rx_fifo.counter.wptr_wrap_cnt
-  else
+  else if s'.rx_fifo.incr_wptr then
     s' with rx_fifo := s'.rx_fifo with wptr := s.rx_fifo.wptr + 1w
+  else
+    s' with rx_fifo := s'.rx_fifo with wptr := s.rx_fifo.wptr
 End
 
 Definition hw2reg_intr_state_nak_de_comb_def:
   hw2reg_intr_state_nak_de_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with hw2reg := s'.hw2reg with intr_state := s'.hw2reg.intr_state with nak_de :=
-  (s.fsm_state = transClockPulseAck ∧ ¬s'.fmt_flag.nak_ok ∧ fext.cio_sda_i)
+  (s.fsm_state = transClockPulseAck ∧ ¬s'.fmt_flag.nak_ok ∧ fext.cio_sda_i )
 End
 
 Definition hw2reg_intr_state_nak_d_comb_def:
   hw2reg_intr_state_nak_d_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with hw2reg := s'.hw2reg with intr_state := s'.hw2reg.intr_state with nak_d :=
-  n2w $ bool_to_bit
-      ( s.fsm_state = transClockPulseAck ∧ ¬s'.fmt_flag.nak_ok ∧ fext.cio_sda_i
-        ∨ word_bit 0 s'.reg2hw.intr_state.nak_q)
+  (n2w $ bool_to_bit (s.fsm_state = transClockPulseAck ∧ ¬s'.fmt_flag.nak_ok ∧ fext.cio_sda_i))
+  || s'.reg2hw.intr_state.nak_q
 End
 
 Definition next_intr_nak_comb_def:
@@ -615,8 +623,8 @@ End
 Definition hw2reg_intr_state_cmd_complete_d_comb_def:
   hw2reg_intr_state_cmd_complete_d_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with hw2reg := s'.hw2reg with intr_state := s'.hw2reg.intr_state with cmd_complete_d :=
-  if ( s.fsm_state = stopHoldStop ∨ s.fsm_state = startSetupStart ∧ s'.log_start ∧ s.pend_restart
-       ∨ word_bit 0 s'.reg2hw.intr_state.cmd_complete_q ) then 1w else 0w
+  (n2w $ bool_to_bit (s.fsm_state = stopHoldStop ∨ s.fsm_state = startSetupStart ∧ s'.log_start ∧ s.pend_restart))
+  || s'.reg2hw.intr_state.cmd_complete_q
 End
 
 Definition next_intr_cmd_complete_comb_def:
@@ -670,11 +678,37 @@ Definition pend_restart_ff_def:
   s' with pend_restart := s'.next_pend_restart
 End
 
+Definition trans_started_ff_def:
+  trans_started_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with trans_started := s'.next_trans_started
+End
+        
+
 Definition byte_index_ff_def:
   byte_index_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with byte_index := s'.next_byte_index
 End
 
+Definition read_byte_ff_def:
+  read_byte_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with read_byte := s'.next_read_byte
+End
+        
+Definition scl_rx_val_ff_def:
+  scl_rx_val_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with scl_rx_val := s'.next_scl_rx_val
+End
+
+Definition sda_rx_val_ff_def:
+  sda_rx_val_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with sda_rx_val := s'.next_sda_rx_val
+End
+
+Definition scl_i_q_ff_def:
+  scl_i_q_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with scl_i_q := n2w $ bool_to_bit fext.cio_scl_i
+End
+        
 val init_tm = add_x_inits ``
   <|
     regs := ^i2c_regs_init_tm;
@@ -691,8 +725,9 @@ End
 Definition i2c_core_ffs1_def:
   i2c_core_ffs1 = [i2c_core_counter_ff; i2c_core_stretch_idle_cnt_ff; fmt_fifo_rptr_ff;
                    fmt_fifo_regfile_ff; i2c_core_rx_fifo_wptr_ff; fmt_fifo_wptr_ff; bit_index_ff;
-                   pend_restart_ff; byte_index_ff; i2c_core_rx_fifo_rptr_ff; i2c_core_rx_fifo_regfile;
-                   i2c_core_ff]
+                   pend_restart_ff; trans_started_ff; byte_index_ff; read_byte_ff; i2c_core_rx_fifo_rptr_ff; i2c_core_rx_fifo_regfile;
+                   scl_rx_val_ff; sda_rx_val_ff; i2c_core_ff;
+                   (*fmt_threshold_q_ff; rx_threshold_q_ff; *) scl_i_q_ff]
 End
 
 (* with dependency taken into account *)        
@@ -721,10 +756,20 @@ Definition i2c_core_combs_def:
     i2c_core_rx_fifo_full_comb; i2c_core_rx_fifo_incr_wptr_comb;
     i2c_core_rx_fifo_counter_wptr_wrap_comb;
     i2c_core_rx_fifo_counter_wptr_wrap_cnt_comb;
-    hw2reg_intr_state_nak_de_comb; next_intr_nak_comb;
+    hw2reg_intr_state_nak_de_comb; hw2reg_intr_state_nak_d_comb; next_intr_nak_comb;
     hw2reg_intr_state_cmd_complete_de_comb;
     hw2reg_intr_state_cmd_complete_d_comb; next_pend_restart_comb;
-    next_trans_started_comb]                 
+    next_trans_started_comb; next_bit_index_comb; i2c_core_next_read_byte_comb
+(*                             
+    fmt_threshold_d_comb; hw2reg_intr_state_fmt_threshold_d_comb;
+    hw2reg_intr_state_fmt_threshold_de_comb;
+    hw2reg_intr_state_fmt_threshold_d_comb; hw2reg_intr_state_rx_threshold_de_comb;
+    hw2reg_intr_state_fmt_overflow_d_comb; hw2reg_intr_state_fmt_overflow_de_comb;
+    hw2reg_intr_state_rx_overflow_d_comb; hw2reg_intr_state_rx_overflow_de_comb;
+    hw2reg_intr_state_scl_interference_d_comb; hw2reg_intr_state_scl_interference_de_comb;
+    hw2reg_intr_state_sda_unstable_d_comb; hw2reg_intr_state_sda_unstable_de_comb
+  *)
+  ]                 
 End
         
 
@@ -781,17 +826,19 @@ Proof
   >> rw [i2c_core_ffs1_def]
   >> rw [Abbr ‘s''’, i2c_core_counter_ff_def, i2c_core_stretch_idle_cnt_ff_def,
          fmt_fifo_rptr_ff_def, fmt_fifo_regfile_ff_def, i2c_core_rx_fifo_wptr_ff_def, fmt_fifo_wptr_ff_def,
-         bit_index_ff_def, pend_restart_ff_def, byte_index_ff_def, i2c_core_rx_fifo_rptr_ff_def,
-         i2c_core_rx_fifo_regfile_def, i2c_core_ff_def]
+         bit_index_ff_def, pend_restart_ff_def, trans_started_ff_def, byte_index_ff_def, i2c_core_rx_fifo_rptr_ff_def,
+         i2c_core_rx_fifo_regfile_def, i2c_core_ff_def, read_byte_ff_def, scl_rx_val_ff_def, sda_rx_val_ff_def,
+         scl_i_q_ff_def]
 QED
 
 Theorem ff_asm2:
   EVERY (λproc. (proc fext s s').hw2reg = s'.hw2reg) i2c_core_ffs1
 Proof
   rw [i2c_core_ffs1_def, i2c_core_counter_ff_def, i2c_core_stretch_idle_cnt_ff_def,
-         fmt_fifo_rptr_ff_def, fmt_fifo_regfile_ff_def, i2c_core_rx_fifo_wptr_ff_def, fmt_fifo_wptr_ff_def,
-         bit_index_ff_def, pend_restart_ff_def, byte_index_ff_def, i2c_core_rx_fifo_rptr_ff_def,
-         i2c_core_rx_fifo_regfile_def, i2c_core_ff_def]
+      fmt_fifo_rptr_ff_def, fmt_fifo_regfile_ff_def, i2c_core_rx_fifo_wptr_ff_def, fmt_fifo_wptr_ff_def,
+      bit_index_ff_def, pend_restart_ff_def, trans_started_ff_def, byte_index_ff_def, i2c_core_rx_fifo_rptr_ff_def,
+      i2c_core_rx_fifo_regfile_def, i2c_core_ff_def, read_byte_ff_def, scl_rx_val_ff_def, sda_rx_val_ff_def,
+      scl_i_q_ff_def]
 QED
 
 Theorem comb_asm1:
@@ -826,8 +873,8 @@ Proof
          hw2reg_intr_state_nak_de_comb_def, next_intr_nak_comb_def,
          hw2reg_intr_state_cmd_complete_de_comb_def, hw2reg_intr_state_cmd_complete_d_comb_def, next_intr_cmd_complete_comb_def,
          next_pend_restart_comb_def, next_trans_started_comb_def, next_bit_index_comb_def,
-         i2c_core_byte_decr_comb_def, fmt_fifo_flag_nak_ok_def, fmt_fifo_incr_rptr_def
-        ]
+         i2c_core_byte_decr_comb_def, fmt_fifo_flag_nak_ok_def, fmt_fifo_incr_rptr_def,
+         hw2reg_intr_state_nak_d_comb_def]
 QED
 
 val _ = export_theory ();
