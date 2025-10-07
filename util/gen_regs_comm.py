@@ -291,9 +291,9 @@ def win_ready_exp():
 
 regs_comm = f"""\
 open HolKernel Parse boolLib bossLib;
+open BasicProvers wordsLib;
 open wordsTheory;
-open wordsLib;
-open cheshireCircuitTheory {ip.name}CoreTheory {ip.name}RegsTheory;
+open cheshireCircuitTheory cheshireMiscTheory cheshireOracleTheory {ip.name}CoreTheory {ip.name}RegsTheory {ip.name}MappingsTheory;
 
 val _ = new_theory "{ip.name}RegsComm";
 
@@ -399,6 +399,113 @@ Proof
   >> rpt (pairarg_tac >> fs [])
   >> rpt IF_CASES_TAC
   >> simp []
+QED
+
+Theorem nb_wstrb:
+  (!i. word_bit i (wstrb: word4) <=> i < nb) /\\ n + 1 = dimindex (:'b) ==>
+  (((n >< 0) wstrb: 'b word) = -1w <=> nb > n)
+Proof
+  rpt strip_tac
+  >> full_simp_tac (boss_ss () ++ fcpLib.FCP_ss) [arithmeticTheory.GREATER_DEF, word_bit_def, word_extract_def, WORD_NEG_1_T, w2w, word_bits_def, Cong AND_CONG, arithmeticTheory.LE_LT1]
+  >> iff_tac
+  >> simp []
+QED
+
+val nb_wstrb_insts = [1, 2, 3, 4] |> map (fn bits =>
+  let
+    val all_ones_val = EVAL (wordsSyntax.mk_wordii (1, bits) |> wordsSyntax.mk_word_2comp);
+  in
+    nb_wstrb
+      |> INST [``n: num`` |-> numSyntax.term_of_int (bits - 1)]
+      |> INST_TYPE [``:'b`` |-> fcpSyntax.mk_int_numeric_type bits]
+      |> SRULE [all_ones_val]
+  end);
+
+Triviality GT_GE1:
+  (a: num) > b <=> a >= b + 1
+Proof
+  decide_tac
+QED
+
+Theorem {ip.name}_req_error_{ip.name}_write:
+  cheshire_req_rel (SOME (nb, offset, SOME wdata)) req ==>
+  (ISL ({ip.name}_write st nb offset wdata) <=> {ip.name}_req_error req /\\ ~{ip.name}_win_addr offset)
+Proof
+  simp [cheshire_req_rel_write]
+  >> rpt strip_tac
+  >> asm_simp_tac std_ss [{ip.name}_write_def, dimword_def, dimindex_{addr_width}, GSYM eq_n2w_iff_w2n_eq]
+  >> rpt TOP_CASE_TAC
+  >> simp [{ip.name}_win_addr_def, {ip.name}_req_error_def]
+  >> dep_rewrite.DEP_REWRITE_TAC nb_wstrb_insts
+  >> fs [GT_GE1]
+QED
+
+Theorem {ip.name}_req_error_{ip.name}_read:
+  cheshire_req_rel (SOME (nb, offset, NONE)) req ==>
+  (ISL ({ip.name}_read st nb offset) <=> {ip.name}_req_error req /\\ ~{ip.name}_win_addr offset)
+Proof
+  simp [cheshire_req_rel_read]
+  >> rpt strip_tac
+  >> simp [{ip.name}_read_def, GSYM eq_n2w_iff_w2n_eq]
+  >> rpt IF_CASES_TAC
+  >> simp [{ip.name}_win_addr_def, {ip.name}_req_error_def]
+QED
+
+Theorem cheshire_req_{ip.name}_req_error:
+  cheshire_req_rel req_m req_c ==>
+  (ISL (cheshire_req {ip.name}_read {ip.name}_write st req_m) <=> {ip.name}_req_error req_c /\\ ~{ip.name}_win_addr (w2n req_c.addr))
+Proof
+  rpt strip_tac
+  >> simp [cheshire_req_def]
+  >> rpt TOP_CASE_TAC
+  >- fs [cheshire_req_rel_def, {ip.name}_req_error_def]
+  >- fs [ISL_SUM_MAP, cheshire_req_rel_def, {ip.name}_req_error_{ip.name}_read]
+  >- fs [ISL_SUM_MAP, cheshire_req_rel_def, {ip.name}_req_error_{ip.name}_write]
+QED
+
+Theorem {ip.name}_write_{ip.name}_hwext_notif_rel:
+  cheshire_req_rel (SOME (nb, offset, SOME wdata)) req /\\
+  {ip.name}_write st nb offset wdata = INR (_, notif) ==>
+  {ip.name}_hwext_notif_rel notif req
+Proof
+  simp [cheshire_req_rel_write]
+  >> pure_rewrite_tac [{ip.name}_write_def]
+  >> rpt TOP_CASE_TAC
+  >> rpt strip_tac
+  >> fs [{ip.name}_hwext_notif_rel_def, {ip.name}_req_error_def, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0"]
+  >> simp [GSYM eq_n2w_iff_w2n_eq]
+  >> dep_rewrite.DEP_REWRITE_TAC nb_wstrb_insts
+  >> gvs []
+QED
+
+Theorem {ip.name}_read_{ip.name}_hwext_notif_rel:
+  cheshire_req_rel (SOME (nb, offset, NONE)) req /\\
+  {ip.name}_read st nb offset = INR (notif, _) ==>
+  {ip.name}_hwext_notif_rel notif req
+Proof
+  simp [cheshire_req_rel_read]
+  >> pure_rewrite_tac [{ip.name}_read_def]
+  >> rpt TOP_CASE_TAC
+  >> rpt strip_tac
+  >> gvs [{ip.name}_hwext_notif_rel_def, {ip.name}_req_error_def, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0"]
+QED
+
+Theorem cheshire_req_{ip.name}_hwext_notif_rel:
+  cheshire_req_rel req_m req_c /\\
+  cheshire_req {ip.name}_read {ip.name}_write st req_m = INR (_, notif, _) ==>
+  {ip.name}_hwext_notif_rel notif req_c
+Proof
+  rpt strip_tac
+  >> drule_then strip_assume_tac cheshire_req_INR_cases
+  >- fs [cheshire_req_rel_def, {ip.name}_hwext_notif_rel_def, {ip.name}_req_error_def]
+  >- (fs [] >> drule_all {ip.name}_read_{ip.name}_hwext_notif_rel >> simp [])
+  >- (fs [] >> drule_all {ip.name}_write_{ip.name}_hwext_notif_rel >> simp [])
+QED
+
+Theorem {ip.name}_win_addr_{ip.name}_req_error:
+  req.valid /\\ {ip.name}_win_addr (w2n req.addr) ==> {ip.name}_req_error req
+Proof
+  simp [{ip.name}_win_addr_def, {ip.name}_req_error_def, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0"]
 QED
 
 val _ = export_theory ();

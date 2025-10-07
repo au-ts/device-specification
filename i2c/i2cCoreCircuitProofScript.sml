@@ -1,6 +1,7 @@
 open BasicProvers;
 open translatorLib;
 open shallowFlattenLib;
+open cheshireMiscTheory;
 open cheshireOracleTheory;
 open i2cCircuitTheory;
 open dep_rewrite;
@@ -1341,17 +1342,6 @@ Theorem mstate_with_fnums:
 ∧ ((mstate with fnums := fnums).fsm_state = mstate.fsm_state)
 Proof
   simp []
-QED
-
-(* TODO: put into CakeML/hardware? (at the very least, stop making copies) *)
-Theorem mk_circuit_cstep:
-  ∃s'. mk_circuit sstep cstep s fext n = cstep (fext n) s' s'
-Proof
-  Cases_on ‘n’
-  >- (qexists ‘s’ >> simp [mk_circuit_def])
-  >- (qexists ‘(sstep (fext n') (mk_circuit sstep cstep s fext n')
-                      (mk_circuit sstep cstep s fext n'))’
-      >> simp [mk_circuit_def])
 QED
 
 Theorem i2c_circuit_cstep:
@@ -3556,7 +3546,12 @@ Proof
     >> simp [i2c_combs_flat]
     )
   >> ‘¬(i2c_circuit fext fbits n).error’ by (
-    cheat
+    CHOOSE_TAC i2c_circuit_cstep
+    >> simp [i2c_combs_flat]
+    >> `~ISL (i2c_write mstate q q' x)` by simp []
+    >> drule_then (fn thm => full_simp_tac pure_ss [thm]) i2c_req_error_i2c_write
+    (* since i2c doesn't use windows, we can ignore this *)
+    >> fs [i2c_win_addr_def]
     )
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
