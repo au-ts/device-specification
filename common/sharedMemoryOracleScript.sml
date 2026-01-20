@@ -75,7 +75,7 @@ Theorem sh_mem_load_sh_mem_oracle:
   /\ 32 <= dimindex (:'a)
   /\ divides 8 (dimindex (:'a))
   /\ nb <= 4
-  ==> sh_mem_load v (addr: 'a word) nb s =
+  ==> sh_mem_load Local v (addr: 'a word) nb s =
     let
       nm = SharedMem MappedRead;
       conf = [n2w nb];
