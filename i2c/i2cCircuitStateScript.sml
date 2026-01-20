@@ -37,26 +37,6 @@ Datatype:
   |>
 End
 
-(*
-* This record is basically the same with the record `counter` above.
-* This is a hack to circumvent the limitation of the translator framework.
-*
-* The problem is that creating an identifier for a signal structured in a record
-* only look up to one level only. Hence if the record `fifo` and `fifo2` each
-* has the field `counter`, the name of the signal `wptr_wrap_cnt` (member of the
-* record `counter`) would be `counter_wptr_wrap_cnt` and one cannot distinguish
-* whether it belongs to `fifo` or `fifo2` anymore.
-*)
-
-Datatype:
-  counter2 = <|
-    wptr_wrap : bool ;
-    wptr_wrap_cnt : 7 word;
-    rptr_wrap : bool;
-    rptr_wrap_cnt : 7 word;
-  |>
-End
-
 Datatype:
   fmt_flag = <|
     start_before : bool;
@@ -67,35 +47,15 @@ Datatype:
 End
 
 Datatype:
-  fifo2 = <|
-    reset   : bool;
-    wvalid  : bool;
-    wready  : bool;
-    wdata   : 13 word;
-    depth   : 7 word;
-    rvalid  : bool;
-    rready  : bool;
-    rdata   : 13 word;
-    rptr    : 7 word;
-    wptr    : 7 word;
-    incr_wptr : bool;
-    incr_rptr : bool;
-    empty   : bool;
-    full    : bool;
-    counter2: counter2;
-  |>
-End
-
-Datatype:
   fifo = <|
     reset   : bool;
     wvalid  : bool;
     wready  : bool;
-    wdata   : 8 word;
+    wdata   : 'a word;
     depth   : 7 word;
     rvalid  : bool;
     rready  : bool;
-    rdata   : 8 word;
+    rdata   : 'a word;
     rptr    : 7 word;
     wptr    : 7 word;
     incr_wptr : bool;
@@ -156,8 +116,13 @@ Datatype:
     error: bool;
 
     (* required for i2c_core *)
-    fsm_state : 5 word;
-    next_state : 5 word;
+    target_loopback: bool;
+    scl_buf: bool;
+    sda_buf: bool;
+    scl_sync: bool;
+    sda_sync: bool;
+    fsm_state : 6 word;
+    next_state : 6 word;
     counter : 20 word;
     next_counter : 20 word;
     byte_index : 9 word;
@@ -195,64 +160,118 @@ Datatype:
     fmt_byte : 8 word;
     next_intr_nak_o : bool;
     next_intr_cmd_complete_o : bool;
-    fmt_fifo : fifo2;
-    rx_fifo : fifo;
+    under_rst : bool;
+    fmt_fifo : 13 fifo;
+    rx_fifo : 8 fifo;
+    tx_fifo : 8 fifo;
+    acq_fifo : 10 fifo;
     cnt_gt_one: bool;
     fmt_threshold_q : 1 word;
     fmt_threshold_d : 1 word;
     rx_threshold_q : 1 word;
     rx_threshold_d : 1 word;
-    scl_i_q : 1 word;
+    scl_i_q : bool;
+    sda_i_q : bool;
     fmt_fifo_regfile : 6 word -> 13 word;
     rx_fifo_regfile : 6 word -> 8 word;
+    tx_fifo_regfile : 6 word -> 8 word;
+    acq_fifo_regfile : 6 word -> 10 word;
+    start_det : bool;
+    stop_det : bool;
+    address_match: bool;
+    input_byte: 8 word;
+    input_byte_clr: bool;
+    stretch_tx: bool;
+    bit_idx: 4 word;
+    rw_bit: bool;
+    host_ack: bool;
+    host_idle: bool;
+    target_idle: bool;
+
+    (* event_fmt_threshold: bool; *)
+    (* event_rx_threshold: bool; *)
+    (* event_fmt_overflow: bool; *)
+    (* event_rx_overflow: bool; *)
+    (* event_nak: bool; *)
+    (* event_scl_interference: bool; *)
+    (* event_sda_interference: bool; *)
+    event_stretch_timeout: bool;
+    (* event_sda_unstable: bool; *)
+    (* event_cmd_complete: bool; *)
+    (* event_tx_stretch: bool; *)
+    (* event_tx_overflow: bool; *)
+    (* event_unexp_stop: bool; *)
+    event_host_timeout: bool;
   |>
 End
 
-Overload idle = “0w : 5 word”;
-Overload active = “1w : 5 word”;
-Overload recReadClockLow = “2w : 5 word”;
-Overload recReadClockPulse = “3w : 5 word”;
-Overload recReadHoldBit = “4w : 5 word”;
-Overload recHostClockLowAck = “5w : 5 word”;
-Overload recHostClockPulseAck = “6w : 5 word”;
-Overload recHostHoldBitAck = “7w : 5 word”;
-Overload stopClockStop = “8w : 5 word”;
-Overload stopSetupStop = “9w : 5 word”;
-Overload stopHoldStop = “10w : 5 word”;
-Overload startSetupStart = “11w : 5 word”;
-Overload startHoldStart = “12w : 5 word”;
-Overload startClockStart = “13w : 5 word”;
-Overload transClockLow = “14w : 5 word”;
-Overload transClockPulse = “15w : 5 word”;
-Overload transHoldBit = “16w : 5 word”;
-Overload transClockLowAck = “17w : 5 word”;
-Overload transClockPulseAck = “18w : 5 word”;
-Overload transHoldDevAck = “19w : 5 word”;
-Overload popFmtFifo = “20w : 5 word”;
+Overload idle = “0w : 6 word”;
+Overload active = “1w : 6 word”;
+Overload popFmtFifo = “2w : 6 word”;
+Overload setupStart = “3w : 6 word”;
+Overload holdStart = “4w : 6 word”;
+Overload clockStart = “5w : 6 word”;
+Overload setupStop = “6w : 6 word”;
+Overload holdStop = “7w : 6 word”;
+Overload clockStop = “8w : 6 word”;
+Overload clockLow = “9w : 6 word”;
+Overload clockPulse = “10w : 6 word”;
+Overload holdBit = “11w : 6 word”;
+Overload clockLowAck = “12w : 6 word”;
+Overload clockPulseAck = “13w : 6 word”;
+Overload holdDevAck = “14w : 6 word”;
+Overload readClockLow = “15w : 6 word”;
+Overload readClockPulse = “16w : 6 word”;
+Overload readHoldBit = “17w : 6 word”;
+Overload hostClockLowAck = “18w : 6 word”;
+Overload hostClockPulseAck = “19w : 6 word”;
+Overload hostHoldBitAck = “20w : 6 word”;
+Overload acquireStart = “21w : 6 word”;
+Overload addrRead = “22w : 6 word”;
+Overload addrAckWait = “23w : 6 word”;
+Overload addrAckSetup = “24w : 6 word”;
+Overload addrAckPulse = “25w : 6 word”;
+Overload addrAckHold = “26w : 6 word”;
+Overload transmitWait = “27w : 6 word”;
+Overload transmitSetup = “28w : 6 word”;
+Overload transmitPulse = “29w : 6 word”;
+Overload transmitHold = “30w : 6 word”;
+Overload transmitAck = “31w : 6 word”;
+Overload transmitAckPulse = “32w : 6 word”;
+Overload waitForStop = “33w : 6 word”;
+Overload acquireByte = “34w : 6 word”;
+Overload acquireAckWait = “35w : 6 word”;
+Overload acquireAckSetup = “36w : 6 word”;
+Overload acquireAckPulse = “37w : 6 word”;
+Overload acquireAckHold = “38w : 6 word”;
+Overload stretchAddr = “39w : 6 word”;
+Overload stretchTx = “40w : 6 word”;
+Overload stretchTxSetup = “41w : 6 word”;
+Overload stretchAcqFull = “42w : 6 word”;
 
 Definition encode_fsm_def:
   encode_fsm (machine: fsmState) =
   case machine of
     Idle => idle
   | Active => active
-  | Transmitting ClockLow => transClockLow
-  | Transmitting ClockPulse => transClockPulse
-  | Transmitting HoldBit => transHoldBit
-  | Transmitting ClockLowAck => transClockLowAck
-  | Transmitting ClockPulseAck => transClockPulseAck
-  | Transmitting HoldDevAck => transHoldDevAck
-  | Receiving ReadClockLow => recReadClockLow
-  | Receiving ReadClockPulse => recReadClockPulse
-  | Receiving ReadHoldBit => recReadHoldBit
-  | Receiving HostClockLowAck => recHostClockLowAck
-  | Receiving HostClockPulseAck => recHostClockPulseAck
-  | Receiving HostHoldBitAck => recHostHoldBitAck
-  | Starting SetupStart => startSetupStart
-  | Starting HoldStart => startHoldStart
-  | Starting ClockStart => startClockStart
-  | Stopping ClockStop => stopClockStop
-  | Stopping SetupStop => stopSetupStop
-  | Stopping HoldStop => stopHoldStop
+  | Transmitting ClockLow => clockLow
+  | Transmitting ClockPulse => clockPulse
+  | Transmitting HoldBit => holdBit
+  | Transmitting ClockLowAck => clockLowAck
+  | Transmitting ClockPulseAck => clockPulseAck
+  | Transmitting HoldDevAck => holdDevAck
+  | Receiving ReadClockLow => readClockLow
+  | Receiving ReadClockPulse => readClockPulse
+  | Receiving ReadHoldBit => readHoldBit
+  | Receiving HostClockLowAck => hostClockLowAck
+  | Receiving HostClockPulseAck => hostClockPulseAck
+  | Receiving HostHoldBitAck => hostHoldBitAck
+  | Starting SetupStart => setupStart
+  | Starting HoldStart => holdStart
+  | Starting ClockStart => clockStart
+  | Stopping ClockStop => clockStop
+  | Stopping SetupStop => setupStop
+  | Stopping HoldStop => holdStop
   | PopFmtFifo => popFmtFifo
 End
 

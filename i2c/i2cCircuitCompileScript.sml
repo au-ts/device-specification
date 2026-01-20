@@ -59,33 +59,67 @@ Theorem i2c_circuit_alt_def:
 i2c_circuit =
      mk_module
        (procs
-        ([i2c_core_counter_ff; i2c_core_stretch_idle_cnt_ff;
-          fmt_fifo_rptr_ff; fmt_fifo_regfile_ff; i2c_core_rx_fifo_wptr_ff;
-          fmt_fifo_wptr_ff; bit_index_ff; pend_restart_ff; byte_index_ff;
-          i2c_core_rx_fifo_rptr_ff; i2c_core_rx_fifo_regfile; i2c_core_ff;
-          i2c_reg_top_ff]))
+        ([fmt_fifo_rptr_ff; fmt_fifo_regfile_ff; fmt_fifo_wptr_ff;
+          i2c_core_tx_fifo_rptr_ff; i2c_core_tx_fifo_regfile; i2c_core_tx_fifo_wptr_ff;
+          i2c_core_acq_fifo_rptr_ff; i2c_core_acq_fifo_regfile; i2c_core_acq_fifo_wptr_ff;
+          i2c_core_rx_fifo_rptr_ff; i2c_core_rx_fifo_regfile; i2c_core_rx_fifo_wptr_ff;
+          i2c_core_sync_ff; i2c_core_ff; i2c_core_counter_ff;
+          i2c_core_stretch_idle_cnt_ff; bit_index_ff; i2c_core_bit_idx_ff;
+          pend_restart_ff; trans_started_ff; byte_index_ff; read_byte_ff;
+          i2c_core_input_byte_ff; scl_rx_val_ff; sda_rx_val_ff; scl_i_q_ff; sda_i_q_ff;
+          i2c_core_under_rst_ff; i2c_core_rw_bit_ff; i2c_core_host_ack_ff; i2c_reg_top_ff]))
        (procs
         ([i2c_reg_top_comb_1;
-          next_trans_started_comb; next_pend_restart_comb; hw2reg_intr_state_cmd_complete_d_comb;
-          hw2reg_intr_state_cmd_complete_de_comb; next_intr_nak_comb;
-          hw2reg_intr_state_nak_de_comb; i2c_core_rx_fifo_counter_wptr_wrap_cnt_comb;
-          i2c_core_rx_fifo_counter_wptr_wrap_comb; i2c_core_rx_fifo_incr_wptr_comb;
-          i2c_core_rx_fifo_full_comb; i2c_core_rx_fifo_wdata_comb; i2c_core_rx_fifo_wvalid_comb;
-          i2c_core_rx_fifo_counter_rptr_wrap_cnt_comb; i2c_core_rx_fifo_counter_rptr_wrap_comb;
-          i2c_core_rx_fifo_incr_rptr_comb; i2c_core_rx_fifo_empty_comb; i2c_core_rx_fifo_rready_comb;
-          i2c_core_rx_fifo_rdata_comb; i2c_core_rx_fifo_reset_comb; i2c_core_next_sda_rx_val_comb;
-          i2c_core_shift_data_en_comb; i2c_core_read_byte_clr_comb; i2c_core_next_state;
-          counter_gt_one_comb; fifo_depth; i2c_core_next_byte_index_comb; i2c_core_byte_num_comb;
-          i2c_core_byte_decr_comb; i2c_core_byte_clr_comb; i2c_core_next_counter;
-          i2c_core_next_stretch_idle_cnt; i2c_core_next_scl_rx_val_comb; i2c_core_scl_d_comb;
-          i2c_core_stretch_en_comb; bit_decr; bit_clr; req_restart; fmt_byte;
-          fmt_fifo_flag_nak_ok; fmt_fifo_flag_read_bytes; fmt_fifo_flag_stop_after;
-          fmt_fifo_flag_start_before; fmt_fifo_rvalid; i2c_core_log_stop_comb; i2c_core_log_start_comb;
-          i2c_core_load_tcount_comb; i2c_core_curr_delay_comb; i2c_core_delay_comb;
-          fmt_fifo_counter_wptr_wrap_cnt; fmt_fifo_counter_wptr_wrap; fmt_fifo_wdata;
-          fmt_fifo_incr_wptr; fmt_fifo_full; fmt_fifo_wvalid; fmt_fifo_counter_rptr_wrap_cnt;
-          fmt_fifo_counter_rptr_wrap; fmt_fifo_incr_rptr; fmt_fifo_empty; fmt_fifo_rready;
-          fmt_fifo_rdata; fmt_fifo_reset;
+          i2c_core_target_loopback_comb; i2c_core_start_det_comb; i2c_core_stop_det_comb;
+          i2c_core_address_match_comb; i2c_core_target_idle_comb; i2c_core_host_idle_comb;
+          i2c_core_event_host_timeout_comb; i2c_core_event_stretch_timeout_comb;
+          fmt_fifo_reset; fmt_fifo_rdata; fmt_fifo_rready; fmt_fifo_empty;
+          fmt_fifo_incr_rptr; fmt_fifo_counter_rptr_wrap; fmt_fifo_counter_rptr_wrap_cnt;
+          fmt_fifo_wvalid; fmt_fifo_full; fmt_fifo_wready; fmt_fifo_incr_wptr;
+          fmt_fifo_wdata; fmt_fifo_counter_wptr_wrap; fmt_fifo_counter_wptr_wrap_cnt;
+          i2c_core_delay_comb; i2c_core_curr_delay_comb; i2c_core_load_tcount_comb;
+          i2c_core_log_start_comb; i2c_core_log_stop_comb; fmt_fifo_rvalid;
+          fmt_fifo_flag_start_before; fmt_fifo_flag_stop_after; fmt_fifo_flag_read_bytes;
+          fmt_fifo_flag_nak_ok; i2c_core_tx_fifo_rdata_comb; i2c_core_tx_fifo_empty_comb;
+          i2c_core_tx_fifo_rvalid_comb; i2c_core_tx_fifo_full_comb;
+          i2c_core_tx_fifo_wready_comb; i2c_core_tx_fifo_depth_comb;
+          i2c_core_acq_fifo_rdata_comb; i2c_core_acq_fifo_empty_comb;
+          i2c_core_acq_fifo_rvalid_comb; i2c_core_acq_fifo_full_comb;
+          i2c_core_acq_fifo_wready_comb; i2c_core_acq_fifo_depth_comb;
+          i2c_core_tx_fifo_reset_comb; i2c_core_tx_fifo_rready_comb;
+          i2c_core_tx_fifo_wvalid_comb; i2c_core_tx_fifo_wdata_comb;
+          i2c_core_tx_fifo_incr_rptr_comb; i2c_core_tx_fifo_counter_rptr_wrap_comb;
+          i2c_core_tx_fifo_counter_rptr_wrap_cnt_comb; i2c_core_tx_fifo_incr_wptr_comb;
+          i2c_core_tx_fifo_counter_wptr_wrap_comb;
+          i2c_core_tx_fifo_counter_wptr_wrap_cnt_comb; i2c_core_acq_fifo_reset_comb;
+          i2c_core_acq_fifo_rready_comb; i2c_core_acq_fifo_wvalid_comb;
+          i2c_core_acq_fifo_wdata_comb; i2c_core_acq_fifo_incr_rptr_comb;
+          i2c_core_acq_fifo_counter_rptr_wrap_comb;
+          i2c_core_acq_fifo_counter_rptr_wrap_cnt_comb; i2c_core_acq_fifo_incr_wptr_comb;
+          i2c_core_acq_fifo_counter_wptr_wrap_comb;
+          i2c_core_acq_fifo_counter_wptr_wrap_cnt_comb; i2c_core_stretch_tx_comb;
+          fmt_byte; req_restart; bit_clr; bit_decr; i2c_core_stretch_en_comb;
+          i2c_core_scl_d_comb; i2c_core_next_scl_rx_val_comb;
+          i2c_core_next_stretch_idle_cnt; i2c_core_next_counter; i2c_core_byte_clr_comb;
+          i2c_core_byte_decr_comb; i2c_core_byte_num_comb; i2c_core_next_byte_index_comb;
+          fifo_depth; counter_gt_one_comb; i2c_core_next_state;
+          i2c_core_read_byte_clr_comb; i2c_core_input_byte_clr_comb;
+          i2c_core_shift_data_en_comb; i2c_core_next_sda_rx_val_comb;
+          i2c_core_next_read_byte_comb; i2c_core_rx_fifo_reset_comb;
+          i2c_core_rx_fifo_rdata_comb; i2c_core_rx_fifo_rready_comb;
+          i2c_core_rx_fifo_empty_comb; i2c_core_rx_fifo_rvalid_comb;
+          i2c_core_rx_fifo_incr_rptr_comb; i2c_core_rx_fifo_counter_rptr_wrap_comb;
+          i2c_core_rx_fifo_counter_rptr_wrap_cnt_comb; i2c_core_rx_fifo_wvalid_comb;
+          i2c_core_rx_fifo_wdata_comb; i2c_core_rx_fifo_full_comb;
+          i2c_core_rx_fifo_wready_comb; i2c_core_rx_fifo_depth_comb;
+          i2c_core_rx_fifo_incr_wptr_comb; i2c_core_rx_fifo_counter_wptr_wrap_comb;
+          i2c_core_rx_fifo_counter_wptr_wrap_cnt_comb; hw2reg_intr_state_nak_de_comb;
+          hw2reg_intr_state_nak_d_comb; next_intr_nak_comb;
+          hw2reg_intr_state_cmd_complete_de_comb; hw2reg_intr_state_cmd_complete_d_comb;
+          next_intr_cmd_complete_comb; next_pend_restart_comb; next_trans_started_comb;
+          next_bit_index_comb; i2c_core_status_fmtfull_d_comb;
+          i2c_core_status_rxfull_d_comb; i2c_core_status_fmtempty_d_comb;
+          i2c_core_status_rxempty_d_comb;
           i2c_reg_top_comb_2]))
        i2c_circuit_init
 Proof
@@ -119,9 +153,10 @@ local
     "intr_host_timeout_o"
   ];
   val comms = i2c_reg_comms @ [];
-  val comms = i2c_reg_comms @ ["fsm_state", "counter", "stretch_idle_cnt", "fmt_fifo_rptr", "fmt_fifo_wptr", "fmt_fifo_regfile",
+  val comms = i2c_reg_comms @ ["fsm_state", "counter", "stretch_idle_cnt", "under_rst", "fmt_fifo_rptr", "fmt_fifo_wptr", "fmt_fifo_regfile",
                              "rx_fifo_regfile", "rx_fifo_rptr", "rx_fifo_wptr", "bit_index", "pend_restart", "byte_index", "trans_started",
-                             "read_byte", "sda_rx_val", "scl_rx_val"]
+                             "read_byte", "sda_rx_val", "scl_rx_val", "scl_buf", "sda_buf", "scl_sync", "sda_sync", "input_byte", "bit_idx",
+                             "rw_bit", "host_ack"]
 
 in
   val tstate = init_translator i2c_circuit_alt_def [] comms;

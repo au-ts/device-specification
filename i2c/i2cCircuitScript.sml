@@ -57,9 +57,53 @@ Theorem i2c_reg_top_ff_flat = i2c_reg_top_ff_def
 
 (* Section --- I2C Core *)
 
+Definition i2c_core_target_loopback_comb_def:
+  i2c_core_target_loopback_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with target_loopback := (word_bit 0 s.reg2hw.ctrl.enabletarget_q ∧ word_bit 0 s.reg2hw.ctrl.llpbk_q)
+End
+
+Definition i2c_core_start_det_comb_def:
+  i2c_core_start_det_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with start_det := (word_bit 0 s.regs.ctrl.enabletarget /\ s.scl_i_q /\ s.scl_sync /\ s.sda_i_q /\ ~s.sda_sync)
+End
+
+Definition i2c_core_stop_det_comb_def:
+  i2c_core_stop_det_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with stop_det := (word_bit 0 s.regs.ctrl.enabletarget /\ s.scl_i_q /\ s.scl_sync /\ ~s.sda_i_q /\ s.sda_sync)
+End
+
+Definition i2c_core_address_match_comb_def:
+  i2c_core_address_match_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with address_match := 
+  ((((7 >< 1) s.input_byte) && s.reg2hw.target_id.mask0_q = s.reg2hw.target_id.address0_q) ∨
+  (((7 >< 1) s.input_byte) && s.reg2hw.target_id.mask1_q = s.reg2hw.target_id.address1_q))
+End
+
+Definition i2c_core_target_idle_comb_def:
+  i2c_core_target_idle_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  (* All the target states come at the end, and the target mode is idle as long as
+   * we aren't in any of those. *)
+  s' with target_idle := (s.fsm_state < acquireStart)
+End
+
+Definition i2c_core_host_idle_comb_def:
+  i2c_core_host_idle_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with host_idle := (s.fsm_state = idle \/ s.fsm_state >= acquireStart)
+End
+
+Definition i2c_core_event_host_timeout_comb_def:
+  i2c_core_event_host_timeout_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with event_host_timeout := (¬s'.target_idle ∧ s.stretch_idle_cnt > s.reg2hw.host_timeout_ctrl.host_timeout_ctrl_q)
+End
+
+Definition i2c_core_event_stretch_timeout_comb_def:
+  i2c_core_event_stretch_timeout_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with event_stretch_timeout := (s'.stretch_en ∧ ((30 >< 0) s.stretch_idle_cnt) > s.reg2hw.timeout_ctrl.val_q ∧ word_bit 0 s.reg2hw.timeout_ctrl.en_q)
+End
+
 (* Direct translation from @{file "i2cCoreCiruitLib.sml"} *)
 Definition fmt_fifo_reset_def:
-  fmt_fifo_reset (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) = 
+  fmt_fifo_reset (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with fmt_fifo := s'.fmt_fifo with reset := ((s'.reg2hw.fifo_ctrl.fmtrst_q = 1w) ∧ s.reg2hw.fifo_ctrl.fmtrst_qe)
 End
 
@@ -85,13 +129,13 @@ End
 
 Definition fmt_fifo_counter_rptr_wrap_def:
   fmt_fifo_counter_rptr_wrap (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with fmt_fifo := s'.fmt_fifo with counter2 := s'.fmt_fifo.counter2 with rptr_wrap :=
+  s' with fmt_fifo := s'.fmt_fifo with counter := s'.fmt_fifo.counter with rptr_wrap :=
   (s'.fmt_fifo.incr_rptr ∧ (5 >< 0) s.fmt_fifo.rptr = 63w : 6 word)
 End
 
 Definition fmt_fifo_counter_rptr_wrap_cnt_def:
   fmt_fifo_counter_rptr_wrap_cnt (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with fmt_fifo := s'.fmt_fifo with counter2 := s'.fmt_fifo.counter2 with rptr_wrap_cnt :=
+  s' with fmt_fifo := s'.fmt_fifo with counter := s'.fmt_fifo.counter with rptr_wrap_cnt :=
   if ¬ word_bit 6 s.fmt_fifo.rptr then (64w : 7 word) else 0w
 End
 
@@ -99,8 +143,8 @@ Definition fmt_fifo_rptr_ff_def:
   fmt_fifo_rptr_ff (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   if s'.fmt_fifo.reset then
     s' with fmt_fifo := s'.fmt_fifo with rptr := 0w
-  else if s'.fmt_fifo.counter2.rptr_wrap then
-    s' with fmt_fifo := s'.fmt_fifo with rptr := s'.fmt_fifo.counter2.rptr_wrap_cnt
+  else if s'.fmt_fifo.counter.rptr_wrap then
+    s' with fmt_fifo := s'.fmt_fifo with rptr := s'.fmt_fifo.counter.rptr_wrap_cnt
   else if s'.fmt_fifo.incr_rptr then
     s' with fmt_fifo := s'.fmt_fifo with rptr := s.fmt_fifo.rptr + 1w
   else
@@ -118,6 +162,11 @@ Definition fmt_fifo_full_def:
   s' with fmt_fifo := s'.fmt_fifo with full :=
   ( word_bit 6 s.fmt_fifo.wptr ≠ word_bit 6 s.fmt_fifo.rptr
     ∧ (5 >< 0) s.fmt_fifo.wptr : 6 word = (5 >< 0) s.fmt_fifo.rptr : 6 word)
+End
+
+Definition fmt_fifo_wready_def:
+  fmt_fifo_wready (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with fmt_fifo := s'.fmt_fifo with wready := (~s'.fmt_fifo.full /\ ~s.under_rst)
 End
 
 Definition fmt_fifo_incr_wptr_def:
@@ -148,13 +197,13 @@ End
 
 Definition fmt_fifo_counter_wptr_wrap_def:
   fmt_fifo_counter_wptr_wrap (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with fmt_fifo := s'.fmt_fifo with counter2 := s'.fmt_fifo.counter2 with wptr_wrap :=
+  s' with fmt_fifo := s'.fmt_fifo with counter := s'.fmt_fifo.counter with wptr_wrap :=
   (s'.fmt_fifo.incr_wptr ∧ (5 >< 0) s.fmt_fifo.wptr = 63w : 6 word)
 End
 
 Definition fmt_fifo_counter_wptr_wrap_cnt_def:
   fmt_fifo_counter_wptr_wrap_cnt (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with fmt_fifo := s'.fmt_fifo with counter2 := s'.fmt_fifo.counter2 with wptr_wrap_cnt :=
+  s' with fmt_fifo := s'.fmt_fifo with counter := s'.fmt_fifo.counter with wptr_wrap_cnt :=
   if ¬ (word_bit 6 s.fmt_fifo.wptr) then 64w else 0w
 End
 
@@ -162,8 +211,8 @@ Definition fmt_fifo_wptr_ff_def:
   fmt_fifo_wptr_ff (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   if s'.fmt_fifo.reset then
     s' with fmt_fifo := s'.fmt_fifo with wptr := 0w
-  else if s'.fmt_fifo.counter2.wptr_wrap then
-    s' with fmt_fifo := s'.fmt_fifo with wptr := s'.fmt_fifo.counter2.wptr_wrap_cnt
+  else if s'.fmt_fifo.counter.wptr_wrap then
+    s' with fmt_fifo := s'.fmt_fifo with wptr := s'.fmt_fifo.counter.wptr_wrap_cnt
   else if s'.fmt_fifo.incr_wptr then
     s' with fmt_fifo := s'.fmt_fifo with wptr := s.fmt_fifo.wptr + 1w
   else
@@ -190,24 +239,24 @@ End
 Definition i2c_core_curr_delay_comb_def:
   i2c_core_curr_delay_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   case s.fsm_state of
-    recReadClockLow      => s' with curr_delay := s'.delay.clock_low
-  | recReadClockPulse    => s' with curr_delay := s'.delay.clock_pulse
-  | recReadHoldBit       => s' with curr_delay := s'.delay.hold_bit
-  | recHostClockLowAck   => s' with curr_delay := s'.delay.clock_low
-  | recHostClockPulseAck => s' with curr_delay := s'.delay.clock_pulse
-  | recHostHoldBitAck    => s' with curr_delay := s'.delay.hold_bit
-  | stopClockStop        => s' with curr_delay := s'.delay.clock_stop
-  | stopSetupStop        => s' with curr_delay := s'.delay.setup_stop
-  | stopHoldStop         => s' with curr_delay := s'.delay.hold_stop
-  | startSetupStart      => s' with curr_delay := s'.delay.setup_start
-  | startHoldStart       => s' with curr_delay := s'.delay.hold_start
-  | startClockStart      => s' with curr_delay := s'.delay.clock_start
-  | transClockLow        => s' with curr_delay := s'.delay.clock_low
-  | transClockPulse      => s' with curr_delay := s'.delay.clock_pulse
-  | transHoldBit         => s' with curr_delay := s'.delay.hold_bit
-  | transClockLowAck     => s' with curr_delay := s'.delay.clock_low
-  | transClockPulseAck   => s' with curr_delay := s'.delay.clock_pulse
-  | transHoldDevAck      => s' with curr_delay := s'.delay.hold_bit
+    readClockLow      => s' with curr_delay := s'.delay.clock_low
+  | readClockPulse    => s' with curr_delay := s'.delay.clock_pulse
+  | readHoldBit       => s' with curr_delay := s'.delay.hold_bit
+  | hostClockLowAck   => s' with curr_delay := s'.delay.clock_low
+  | hostClockPulseAck => s' with curr_delay := s'.delay.clock_pulse
+  | hostHoldBitAck    => s' with curr_delay := s'.delay.hold_bit
+  | clockStop        => s' with curr_delay := s'.delay.clock_stop
+  | setupStop        => s' with curr_delay := s'.delay.setup_stop
+  | holdStop         => s' with curr_delay := s'.delay.hold_stop
+  | setupStart      => s' with curr_delay := s'.delay.setup_start
+  | holdStart       => s' with curr_delay := s'.delay.hold_start
+  | clockStart      => s' with curr_delay := s'.delay.clock_start
+  | clockLow        => s' with curr_delay := s'.delay.clock_low
+  | clockPulse      => s' with curr_delay := s'.delay.clock_pulse
+  | holdBit         => s' with curr_delay := s'.delay.hold_bit
+  | clockLowAck     => s' with curr_delay := s'.delay.clock_low
+  | clockPulseAck   => s' with curr_delay := s'.delay.clock_pulse
+  | holdDevAck      => s' with curr_delay := s'.delay.hold_bit
   | _                    => s' with curr_delay := 0w
 End
 
@@ -218,17 +267,17 @@ End
 
 Definition i2c_core_log_start_comb_def:
   i2c_core_log_start_comb (fext : i2c_circuit_ext_state) (s : i2c_circuit_state) (s' : i2c_circuit_state) =
-  s' with log_start := (s.fsm_state = startSetupStart ∧ s.counter = 1w)
+  s' with log_start := (s.fsm_state = setupStart ∧ s.counter = 1w)
 End
 
 Definition i2c_core_log_stop_comb_def:
   i2c_core_log_stop_comb (fext : i2c_circuit_ext_state) (s : i2c_circuit_state) (s' : i2c_circuit_state) =
-  s' with log_stop := (s.fsm_state = stopClockStop ∧ s.counter = 1w)
+  s' with log_stop := (s.fsm_state = clockStop ∧ s.counter = 1w)
 End
 
 Definition fmt_fifo_rvalid_def:
   fmt_fifo_rvalid (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with fmt_fifo := s'.fmt_fifo with rvalid := ¬s'.fmt_fifo.empty
+  s' with fmt_fifo := s'.fmt_fifo with rvalid := (¬s'.fmt_fifo.empty /\ ~s'.under_rst)
 End
 
 Definition fmt_fifo_flag_start_before_def:
@@ -255,6 +304,291 @@ Definition fmt_fifo_flag_nak_ok_def:
   (s'.fmt_fifo.rvalid ∧ word_bit 12 s'.fmt_fifo.rdata)
 End
 
+Definition i2c_core_tx_fifo_rdata_comb_def:
+  i2c_core_tx_fifo_rdata_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with rdata := s.tx_fifo_regfile $ (5 >< 0) s.tx_fifo.rptr
+End
+
+Definition i2c_core_tx_fifo_empty_comb_def:
+  i2c_core_tx_fifo_empty_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with empty := (s.tx_fifo.rptr = s.tx_fifo.wptr)
+End
+
+Definition i2c_core_tx_fifo_rvalid_comb_def:
+  i2c_core_tx_fifo_rvalid_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with rvalid := (~s'.tx_fifo.empty /\ ~s'.under_rst)
+End
+
+Definition i2c_core_tx_fifo_full_comb_def:
+  i2c_core_tx_fifo_full_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with full :=
+  ((word_bit 6 s.tx_fifo.wptr ≠ word_bit 6 s.tx_fifo.rptr) ∧
+   ((5 >< 0) s.tx_fifo.wptr : 6 word = (5 >< 0) s.tx_fifo.rptr : 6 word))
+End
+
+Definition i2c_core_tx_fifo_wready_comb_def:
+  i2c_core_tx_fifo_wready_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with wready := (~s'.tx_fifo.full /\ ~s.under_rst)
+End
+
+Definition i2c_core_tx_fifo_depth_comb_def:
+  i2c_core_tx_fifo_depth_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s':i2c_circuit_state) =
+  if s'.tx_fifo.full then
+    s' with tx_fifo := s'.tx_fifo with depth := 64w
+  else if word_bit 6 s.tx_fifo.wptr = word_bit 6 s.tx_fifo.rptr then
+    s' with tx_fifo := s'.tx_fifo with depth :=
+    ((w2w ((5 >< 0) s.tx_fifo.wptr : 6 word)) - (w2w ((5 >< 0) s.tx_fifo.rptr : 6 word)))
+  else
+    s' with tx_fifo := s'.tx_fifo with depth :=
+    64w - w2w ((5 >< 0) s.tx_fifo.rptr : 6 word) + w2w ((5 >< 0) s.tx_fifo.wptr :  6 word)
+End
+
+Definition i2c_core_acq_fifo_rdata_comb_def:
+  i2c_core_acq_fifo_rdata_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with rdata := s.acq_fifo_regfile $ (5 >< 0) s.acq_fifo.rptr
+End
+
+Definition i2c_core_acq_fifo_empty_comb_def:
+  i2c_core_acq_fifo_empty_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with empty := (s.acq_fifo.rptr = s.acq_fifo.wptr)
+End
+
+Definition i2c_core_acq_fifo_rvalid_comb_def:
+  i2c_core_acq_fifo_rvalid_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with rvalid := (~s'.acq_fifo.empty /\ ~s'.under_rst)
+End
+
+Definition i2c_core_acq_fifo_full_comb_def:
+  i2c_core_acq_fifo_full_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with full :=
+  ((word_bit 6 s.acq_fifo.wptr ≠ word_bit 6 s.acq_fifo.rptr) ∧
+   ((5 >< 0) s.acq_fifo.wptr : 6 word = (5 >< 0) s.acq_fifo.rptr : 6 word))
+End
+
+Definition i2c_core_acq_fifo_wready_comb_def:
+  i2c_core_acq_fifo_wready_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with wready := (~s'.acq_fifo.full /\ ~s.under_rst)
+End
+
+Definition i2c_core_acq_fifo_depth_comb_def:
+  i2c_core_acq_fifo_depth_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s':i2c_circuit_state) =
+  if s'.acq_fifo.full then
+    s' with acq_fifo := s'.acq_fifo with depth := 64w
+  else if word_bit 6 s.acq_fifo.wptr = word_bit 6 s.acq_fifo.rptr then
+    s' with acq_fifo := s'.acq_fifo with depth :=
+    ((w2w ((5 >< 0) s.acq_fifo.wptr : 6 word)) - (w2w ((5 >< 0) s.acq_fifo.rptr : 6 word)))
+  else
+    s' with acq_fifo := s'.acq_fifo with depth :=
+    64w - w2w ((5 >< 0) s.acq_fifo.rptr : 6 word) + w2w ((5 >< 0) s.acq_fifo.wptr :  6 word)
+End
+
+Definition i2c_core_tx_fifo_reset_comb_def:
+  i2c_core_tx_fifo_reset_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with reset :=
+  (word_bit 0 s'.reg2hw.fifo_ctrl.txrst_q ∧ s.reg2hw.fifo_ctrl.txrst_qe)
+End
+
+Definition i2c_core_tx_fifo_rready_comb_def:
+  i2c_core_tx_fifo_rready_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with rready := (s.fsm_state = transmitAckPulse ∧ ~s.scl_sync)
+End
+
+Definition i2c_core_tx_fifo_wvalid_comb_def:
+  i2c_core_tx_fifo_wvalid_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with wvalid :=
+  if s'.target_loopback then
+    s'.acq_fifo.rvalid ∧ word_bit 0 s.reg2hw.ctrl.enabletarget_q ∧ ((9 >< 8) s'.acq_fifo.rdata: 2 word) = 0w
+  else
+    s.reg2hw.txdata.txdata_qe
+End
+
+Definition i2c_core_tx_fifo_wdata_comb_def:
+  i2c_core_tx_fifo_wdata_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with wdata :=
+  if s'.target_loopback then
+    (7 >< 0) s'.acq_fifo.rdata
+  else
+    s.reg2hw.txdata.txdata_q
+End
+
+Definition i2c_core_tx_fifo_incr_rptr_comb_def:
+  i2c_core_tx_fifo_incr_rptr_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with incr_rptr := (¬s'.tx_fifo.empty ∧ s'.tx_fifo.rready)
+End
+
+Definition i2c_core_tx_fifo_counter_rptr_wrap_comb_def:
+  i2c_core_tx_fifo_counter_rptr_wrap_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with counter := s'.tx_fifo.counter with rptr_wrap :=
+  (s'.tx_fifo.incr_rptr ∧ (5 >< 0) s.tx_fifo.rptr = 63w : 6 word)
+End
+
+Definition i2c_core_tx_fifo_counter_rptr_wrap_cnt_comb_def:
+  i2c_core_tx_fifo_counter_rptr_wrap_cnt_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with counter := s'.tx_fifo.counter with rptr_wrap_cnt :=
+  if ¬ word_bit 6 s.tx_fifo.rptr then (64w : 7 word) else 0w
+End
+
+Definition i2c_core_tx_fifo_rptr_ff_def:
+  i2c_core_tx_fifo_rptr_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  if s'.tx_fifo.reset then
+    s' with tx_fifo := s'.tx_fifo with rptr := 0w
+  else if s'.tx_fifo.counter.rptr_wrap then
+    s' with tx_fifo := s'.tx_fifo with rptr := s'.tx_fifo.counter.rptr_wrap_cnt
+  else if s'.tx_fifo.incr_rptr then
+    s' with tx_fifo := s'.tx_fifo with rptr := s.tx_fifo.rptr + 1w
+  else
+    s' with tx_fifo := s'.tx_fifo with rptr := s.tx_fifo.rptr
+End
+
+Definition i2c_core_tx_fifo_incr_wptr_comb_def:
+  i2c_core_tx_fifo_incr_wptr_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with incr_wptr := (¬s'.tx_fifo.full ∧ s'.tx_fifo.wvalid)
+End
+
+Definition i2c_core_tx_fifo_regfile_def:
+  i2c_core_tx_fifo_regfile (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  let
+    wptr = (5 >< 0) s.tx_fifo.wptr;
+  in
+    if s'.tx_fifo.incr_wptr
+    then s' with tx_fifo_regfile := (wptr =+ s'.tx_fifo.wdata) s'.tx_fifo_regfile
+    else s'
+End
+
+Definition i2c_core_tx_fifo_counter_wptr_wrap_comb_def:
+  i2c_core_tx_fifo_counter_wptr_wrap_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with counter := s'.tx_fifo.counter with wptr_wrap :=
+  (s'.tx_fifo.incr_wptr ∧ (5 >< 0) s.tx_fifo.wptr = 63w : 6 word)
+End
+
+Definition i2c_core_tx_fifo_counter_wptr_wrap_cnt_comb_def:
+  i2c_core_tx_fifo_counter_wptr_wrap_cnt_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with tx_fifo := s'.tx_fifo with counter := s'.tx_fifo.counter with wptr_wrap_cnt :=
+  if ¬word_bit 6 s.tx_fifo.wptr then 64w else 0w
+End
+
+Definition i2c_core_tx_fifo_wptr_ff_def:
+  i2c_core_tx_fifo_wptr_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  if s'.tx_fifo.reset then
+    s' with tx_fifo := s'.tx_fifo with wptr := 0w
+  else if s'.tx_fifo.counter.wptr_wrap then
+    s' with tx_fifo := s'.tx_fifo with wptr := s'.tx_fifo.counter.wptr_wrap_cnt
+  else if s'.tx_fifo.incr_wptr then
+    s' with tx_fifo := s'.tx_fifo with wptr := s.tx_fifo.wptr + 1w
+  else
+    s' with tx_fifo := s'.tx_fifo with wptr := s.tx_fifo.wptr
+End
+
+Definition i2c_core_acq_fifo_reset_comb_def:
+  i2c_core_acq_fifo_reset_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with reset :=
+  (word_bit 0 s'.reg2hw.fifo_ctrl.acqrst_q ∧ s.reg2hw.fifo_ctrl.acqrst_qe)
+End
+
+Definition i2c_core_acq_fifo_rready_comb_def:
+  i2c_core_acq_fifo_rready_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with rready :=
+  ((s'.reg2hw.acqdata.abyte_re ∧ s'.reg2hw.acqdata.signal_re)
+  ∨ (s'.target_loopback ∧ (s'.tx_fifo.wready ∨ ((9 >< 8) s'.acq_fifo.rdata: 2 word) ≠ 0w)))
+End
+
+Definition i2c_core_acq_fifo_wvalid_comb_def:
+  i2c_core_acq_fifo_wvalid_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  if s'.start_det ∨ s'.stop_det then
+    s' with acq_fifo := s'.acq_fifo with wvalid := ¬s'.target_idle
+  else if (s.fsm_state = addrAckHold ∨ s.fsm_state = acquireAckHold) ∧ s.counter = 1w ∨ s.fsm_state = stretchAddr ∨ s.fsm_state = stretchAcqFull then
+    s' with acq_fifo := s'.acq_fifo with wvalid := s'.acq_fifo.wready
+  else
+    s' with acq_fifo := s'.acq_fifo with wvalid := F
+End
+
+Definition i2c_core_acq_fifo_wdata_comb_def:
+  i2c_core_acq_fifo_wdata_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  if s'.start_det then
+    s' with acq_fifo := s'.acq_fifo with wdata := (3w : word2) @@ s.read_byte
+  else if s'.stop_det then
+    s' with acq_fifo := s'.acq_fifo with wdata := (2w : word2) @@ s.read_byte
+  else if s.fsm_state = addrAckHold ∧ s.counter = 1w ∨ s.fsm_state = stretchAddr then
+    s' with acq_fifo := s'.acq_fifo with wdata := (1w : word2) @@ s.read_byte
+  else if s.fsm_state = acquireAckHold ∧ s.counter = 1w ∨ s.fsm_state = stretchAcqFull then
+    s' with acq_fifo := s'.acq_fifo with wdata := (0w : word2) @@ s.read_byte
+  else
+    s' with acq_fifo := s'.acq_fifo with wdata := 0w
+End
+
+Definition i2c_core_acq_fifo_incr_rptr_comb_def:
+  i2c_core_acq_fifo_incr_rptr_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with incr_rptr := (¬s'.acq_fifo.empty ∧ s'.acq_fifo.rready)
+End
+
+Definition i2c_core_acq_fifo_counter_rptr_wrap_comb_def:
+  i2c_core_acq_fifo_counter_rptr_wrap_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with counter := s'.acq_fifo.counter with rptr_wrap :=
+  (s'.acq_fifo.incr_rptr ∧ (5 >< 0) s.acq_fifo.rptr = 63w : 6 word)
+End
+
+Definition i2c_core_acq_fifo_counter_rptr_wrap_cnt_comb_def:
+  i2c_core_acq_fifo_counter_rptr_wrap_cnt_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with counter := s'.acq_fifo.counter with rptr_wrap_cnt :=
+  if ¬ word_bit 6 s.acq_fifo.rptr then (64w : 7 word) else 0w
+End
+
+Definition i2c_core_acq_fifo_rptr_ff_def:
+  i2c_core_acq_fifo_rptr_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  if s'.acq_fifo.reset then
+    s' with acq_fifo := s'.acq_fifo with rptr := 0w
+  else if s'.acq_fifo.counter.rptr_wrap then
+    s' with acq_fifo := s'.acq_fifo with rptr := s'.acq_fifo.counter.rptr_wrap_cnt
+  else if s'.acq_fifo.incr_rptr then
+    s' with acq_fifo := s'.acq_fifo with rptr := s.acq_fifo.rptr + 1w
+  else
+    s' with acq_fifo := s'.acq_fifo with rptr := s.acq_fifo.rptr
+End
+
+Definition i2c_core_acq_fifo_incr_wptr_comb_def:
+  i2c_core_acq_fifo_incr_wptr_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with incr_wptr := (¬s'.acq_fifo.full ∧ s'.acq_fifo.wvalid)
+End
+
+Definition i2c_core_acq_fifo_regfile_def:
+  i2c_core_acq_fifo_regfile (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  let
+    wptr = (5 >< 0) s.acq_fifo.wptr;
+  in
+    if s'.acq_fifo.incr_wptr
+    then s' with acq_fifo_regfile := (wptr =+ s'.acq_fifo.wdata) s'.acq_fifo_regfile
+    else s'
+End
+
+Definition i2c_core_acq_fifo_counter_wptr_wrap_comb_def:
+  i2c_core_acq_fifo_counter_wptr_wrap_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with counter := s'.acq_fifo.counter with wptr_wrap :=
+  (s'.acq_fifo.incr_wptr ∧ (5 >< 0) s.acq_fifo.wptr = 63w : 6 word)
+End
+
+Definition i2c_core_acq_fifo_counter_wptr_wrap_cnt_comb_def:
+  i2c_core_acq_fifo_counter_wptr_wrap_cnt_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with acq_fifo := s'.acq_fifo with counter := s'.acq_fifo.counter with wptr_wrap_cnt :=
+  if ¬word_bit 6 s.acq_fifo.wptr then 64w else 0w
+End
+
+Definition i2c_core_acq_fifo_wptr_ff_def:
+  i2c_core_acq_fifo_wptr_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  if s'.acq_fifo.reset then
+    s' with acq_fifo := s'.acq_fifo with wptr := 0w
+  else if s'.acq_fifo.counter.wptr_wrap then
+    s' with acq_fifo := s'.acq_fifo with wptr := s'.acq_fifo.counter.wptr_wrap_cnt
+  else if s'.acq_fifo.incr_wptr then
+    s' with acq_fifo := s'.acq_fifo with wptr := s.acq_fifo.wptr + 1w
+  else
+    s' with acq_fifo := s'.acq_fifo with wptr := s.acq_fifo.wptr
+End
+
+Definition i2c_core_stretch_tx_comb_def:
+  i2c_core_stretch_tx_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with stretch_tx := (¬s'.tx_fifo.rvalid ∨ s'.acq_fifo.depth > 1w)
+End
+
 Definition fmt_byte_def:
   fmt_byte (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with fmt_byte :=
@@ -269,37 +603,40 @@ End
 
 Definition bit_clr_def:
   bit_clr (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with bit_clr := ( (s.fsm_state = transHoldBit ∨ s.fsm_state = recReadHoldBit)
+  s' with bit_clr := ( (s.fsm_state = holdBit ∨ s.fsm_state = readHoldBit)
                        ∧  s.counter = 1w ∧ s.bit_index = 0w )
 End
 
 Definition bit_decr_def:
   bit_decr (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with bit_decr := ((s.fsm_state = transHoldBit ∨ s.fsm_state = recReadHoldBit)
+  s' with bit_decr := ((s.fsm_state = holdBit ∨ s.fsm_state = readHoldBit)
                        ∧ s.counter = 1w ∧ s.bit_index ≠ 0w )
 End
 
 Definition i2c_core_stretch_en_comb_def:
   i2c_core_stretch_en_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with stretch_en := (s.fsm_state = transClockPulse ∨  s.fsm_state = transClockPulseAck
-                         ∨  s.fsm_state = recReadClockPulse ∨  s.fsm_state = recHostClockPulseAck)
+  s' with stretch_en := (s.fsm_state = clockPulse ∨  s.fsm_state = clockPulseAck
+                         ∨  s.fsm_state = readClockPulse ∨  s.fsm_state = hostClockPulseAck)
 End
 
 Definition i2c_core_scl_d_comb_def:
   i2c_core_scl_d_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with scl_d := ¬( s.fsm_state = startClockStart
-                      ∨ s.fsm_state = transClockLow
-                      ∨ s.fsm_state = transHoldBit
-                      ∨ s.fsm_state = transClockLowAck
-                      ∨ s.fsm_state = transHoldDevAck
-                      ∨ s.fsm_state = recReadClockLow
-                      ∨ s.fsm_state = recReadHoldBit
-                      ∨ s.fsm_state = recHostClockLowAck
-                      ∨ s.fsm_state = recHostHoldBitAck
-                      ∨ s.fsm_state = recHostHoldBitAck
-                      ∨ s.fsm_state = stopClockStop
+  s' with scl_d := ¬( s.fsm_state = clockStart
+                      ∨ s.fsm_state = clockLow
+                      ∨ s.fsm_state = holdBit
+                      ∨ s.fsm_state = clockLowAck
+                      ∨ s.fsm_state = holdDevAck
+                      ∨ s.fsm_state = readClockLow
+                      ∨ s.fsm_state = readHoldBit
+                      ∨ s.fsm_state = hostClockLowAck
+                      ∨ s.fsm_state = hostHoldBitAck
+                      ∨ s.fsm_state = clockStop
                       ∨ s.fsm_state = active ∧ (¬s'.fmt_flag.start_before ∨ s.trans_started)
-                      ∨ s.fsm_state = popFmtFifo ∧ ¬s'.fmt_flag.stop_after)
+                      ∨ s.fsm_state = popFmtFifo ∧ ¬s'.fmt_flag.stop_after
+                      ∨ s.fsm_state = stretchAddr
+                      ∨ s.fsm_state = stretchTx
+                      ∨ s.fsm_state = stretchTxSetup
+                      ∨ s.fsm_state = stretchAcqFull)
 End
 
 Definition i2c_core_next_scl_rx_val_comb_def:
@@ -312,7 +649,7 @@ End
 
 Definition i2c_core_next_stretch_idle_cnt_def:
   i2c_core_next_stretch_idle_cnt (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  if s'.stretch_en ∧ s'.scl_d ∧ ¬fext.cio_scl_i
+  if s'.stretch_en ∧ s'.scl_d ∧ ¬s.scl_sync ∨ ¬s'.target_idle ∧ ¬s'.event_host_timeout ∧ s.scl_sync
   then s' with next_stretch_idle_cnt := s.stretch_idle_cnt + 1w
   else s' with next_stretch_idle_cnt := 0w
 End
@@ -331,7 +668,7 @@ End
 
 Definition i2c_core_byte_decr_comb_def:
   i2c_core_byte_decr_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with byte_decr := (s.fsm_state = recHostHoldBitAck ∧ s.counter = 1w ∧ s.byte_index ≠ 1w)
+  s' with byte_decr := (s.fsm_state = hostHoldBitAck ∧ s.counter = 1w ∧ s.byte_index ≠ 1w)
 End
 
 Definition i2c_core_byte_num_comb_def:
@@ -368,103 +705,239 @@ End
 
 Definition i2c_core_next_state_def:
   i2c_core_next_state (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  case s.fsm_state of
-    idle                 => if s.regs.ctrl.enablehost = 1w ∧ s'.fmt_fifo.rvalid
-                            then s' with next_state := active
-                            else s' with next_state := idle
-  | active               => if s'.fmt_flag.read_bytes then
-                              s' with next_state := recReadClockLow
-                            else if s'.fmt_flag.start_before ∧ ¬s.trans_started then
-                              s' with next_state := startSetupStart
-                            else
-                              s' with next_state := transClockLow
+  let
+    s' = case s.fsm_state of
+      idle              => if s.regs.ctrl.enablehost = 1w ∧ s'.fmt_fifo.rvalid
+                           then s' with next_state := active
+                           else s' with next_state := idle
+    | active            => if s'.fmt_flag.read_bytes then
+                             s' with next_state := readClockLow
+                           else if s'.fmt_flag.start_before ∧ ¬s.trans_started then
+                             s' with next_state := setupStart
+                           else
+                             s' with next_state := clockLow
 
-  | recReadClockLow      => if s'.cnt_gt_one then s' with next_state := recReadClockLow
-                            else s' with next_state := recReadClockPulse
+    | readClockLow      => if s'.cnt_gt_one then s' with next_state := readClockLow
+                           else s' with next_state := readClockPulse
 
-  | recReadClockPulse    => if s'.cnt_gt_one then s' with next_state := recReadClockPulse
-                            else s' with next_state := recReadHoldBit
+    | readClockPulse    => if s'.cnt_gt_one then s' with next_state := readClockPulse
+                           else s' with next_state := readHoldBit
 
-  | recReadHoldBit       => if s'.cnt_gt_one then
-                              s' with next_state := recReadHoldBit
-                            else if s.bit_index = 0w then
-                              s' with next_state := recHostClockLowAck
-                            else
-                              s' with next_state := recReadClockLow
+                           | readHoldBit       => if s'.cnt_gt_one then
+                           s' with next_state := readHoldBit
+                           else if s.bit_index = 0w then
+                             s' with next_state := hostClockLowAck
+                           else
+                             s' with next_state := readClockLow
 
-  | recHostClockLowAck   => if s'.cnt_gt_one then s' with next_state := recHostClockLowAck
-                            else s' with next_state := recHostClockPulseAck
+    | hostClockLowAck   => if s'.cnt_gt_one then s' with next_state := hostClockLowAck
+                           else s' with next_state := hostClockPulseAck
 
-  | recHostClockPulseAck => if s'.cnt_gt_one then s' with next_state := recHostClockPulseAck
-                            else s' with next_state := recHostHoldBitAck
+    | hostClockPulseAck => if s'.cnt_gt_one then s' with next_state := hostClockPulseAck
+                           else s' with next_state := hostHoldBitAck
 
-  | recHostHoldBitAck    => if s'.cnt_gt_one then
-                              s' with next_state := recHostHoldBitAck
-                            else if s.byte_index = 1w ∧ s'.fmt_flag.stop_after then
-                              s' with next_state := stopClockStop
-                            else if s.byte_index = 1w ∧ ¬s'.fmt_flag.stop_after then
-                              s' with next_state := popFmtFifo
-                            else
-                              s' with next_state := recReadClockLow
+    | hostHoldBitAck    => if s'.cnt_gt_one then
+                             s' with next_state := hostHoldBitAck
+                           else if s.byte_index = 1w ∧ s'.fmt_flag.stop_after then
+                             s' with next_state := clockStop
+                           else if s.byte_index = 1w ∧ ¬s'.fmt_flag.stop_after then
+                             s' with next_state := popFmtFifo
+                           else
+                             s' with next_state := readClockLow
 
-  | stopClockStop        => if s'.cnt_gt_one then s' with next_state := stopClockStop
-                            else s' with next_state := stopSetupStop
+    | clockStop         => if s'.cnt_gt_one then s' with next_state := clockStop
+                           else s' with next_state := setupStop
 
-  | stopSetupStop        => if s'.cnt_gt_one then s' with next_state := stopSetupStop
-                            else s' with next_state := stopHoldStop
+    | setupStop         => if s'.cnt_gt_one then s' with next_state := setupStop
+                           else s' with next_state := holdStop
 
-  | stopHoldStop         => if s'.cnt_gt_one then s' with next_state := stopHoldStop
-                            else if s.regs.ctrl.enablehost = 0w then s' with next_state := idle
-                            else s' with next_state := popFmtFifo
+    | holdStop          => if s'.cnt_gt_one then s' with next_state := holdStop
+                           else if s.regs.ctrl.enablehost = 0w then s' with next_state := idle
+                           else s' with next_state := popFmtFifo
 
-  | startSetupStart      => if s'.cnt_gt_one then s' with next_state := startSetupStart
-                            else s' with next_state := startHoldStart
+    | setupStart        => if s'.cnt_gt_one then s' with next_state := setupStart
+                           else s' with next_state := holdStart
 
-  | startHoldStart       => if s'.cnt_gt_one then s' with next_state := startHoldStart
-                            else s' with next_state := startClockStart
+    | holdStart         => if s'.cnt_gt_one then s' with next_state := holdStart
+                           else s' with next_state := clockStart
 
-  | startClockStart      => if s'.cnt_gt_one then s' with next_state := startClockStart
-                            else s' with next_state := transClockLow
+    | clockStart        => if s'.cnt_gt_one then s' with next_state := clockStart
+                           else s' with next_state := clockLow
 
-  | transClockLow        => if s'.cnt_gt_one then s' with next_state := transClockLow
-                            else if s.pend_restart then s' with next_state := startSetupStart
-                            else s' with next_state := transClockPulse
+    | clockLow          => if s'.cnt_gt_one then s' with next_state := clockLow
+                           else if s.pend_restart then s' with next_state := setupStart
+                           else s' with next_state := clockPulse
 
-  | transClockPulse      => if s'.cnt_gt_one then s' with next_state := transClockPulse
-                            else s' with next_state := transHoldBit
+    | clockPulse        => if s'.cnt_gt_one then s' with next_state := clockPulse
+                           else s' with next_state := holdBit
 
-  | transHoldBit         => if s'.cnt_gt_one then s' with next_state := transHoldBit
-                            else if s.bit_index = 0w then s' with next_state := transClockLowAck
-                            else s' with next_state := transClockLow
+    | holdBit           => if s'.cnt_gt_one then s' with next_state := holdBit
+                           else if s.bit_index = 0w then s' with next_state := clockLowAck
+                           else s' with next_state := clockLow
 
-  | transClockLowAck     => if s'.cnt_gt_one then s' with next_state := transClockLowAck
-                            else s' with next_state := transClockPulseAck
-                                                       
-  | transClockPulseAck   => if s'.cnt_gt_one then s' with next_state := transClockPulseAck
-                            else s' with next_state := transHoldDevAck
+    | clockLowAck       => if s'.cnt_gt_one then s' with next_state := clockLowAck
+                           else s' with next_state := clockPulseAck
 
-  | transHoldDevAck      => if s'.cnt_gt_one then
-                              s' with next_state := transHoldDevAck
-                            else if s'.fmt_flag.stop_after then
-                              s' with next_state := stopClockStop
-                            else
-                              s' with next_state := popFmtFifo
+    | clockPulseAck     => if s'.cnt_gt_one then s' with next_state := clockPulseAck
+                           else s' with next_state := holdDevAck
 
-  | popFmtFifo           => if s.regs.ctrl.enablehost = 0w then s' with next_state := stopClockStop
-                            else if s'.fmt_fifo.depth = 1w then s' with next_state := idle
-                            else s' with next_state := active
+    | holdDevAck        => if s'.cnt_gt_one then
+                             s' with next_state := holdDevAck
+                           else if s'.fmt_flag.stop_after then
+                             s' with next_state := clockStop
+                           else
+                             s' with next_state := popFmtFifo
 
-  | _ => s' with next_state := idle
+    | popFmtFifo        => if s.regs.ctrl.enablehost = 0w then s' with next_state := clockStop
+                           else if s'.fmt_fifo.depth = 1w then s' with next_state := idle
+                           else s' with next_state := active
+
+    | acquireStart      => if s.scl_i_q /\ ~s.scl_sync then
+                             s' with next_state := addrRead
+                           else
+                             s' with next_state := acquireStart
+
+    | addrRead          => if s.bit_idx ≠ 8w then
+                             s' with next_state := addrRead
+                           else if s'.address_match then
+                             s' with next_state := addrAckWait
+                           else
+                             s' with next_state := idle
+
+    | addrAckWait       => if s.counter = 1w ∧ ~s.scl_sync then
+                             s' with next_state := addrAckSetup
+                           else
+                             s' with next_state := addrAckWait
+
+    | addrAckSetup      => if s.scl_sync then
+                             s' with next_state := addrAckPulse
+                           else
+                             s' with next_state := addrAckSetup
+
+    | addrAckPulse      => if ~s.scl_sync then
+                             s' with next_state := addrAckHold
+                           else
+                             s' with next_state := addrAckPulse
+
+    | addrAckHold       => if s.counter ≠ 1w then
+                             s' with next_state := addrAckHold
+                           else if ~s'.acq_fifo.wready then
+                             s' with next_state := stretchAddr
+                           else if s.rw_bit then
+                             s' with next_state := transmitWait
+                           else
+                             s' with next_state := acquireByte
+
+    | transmitWait      => if s'.stretch_tx then
+                             s' with next_state := stretchTx
+                           else
+                             s' with next_state := transmitSetup
+
+    | transmitSetup     => if s.scl_sync then
+                             s' with next_state := transmitPulse
+                           else
+                             s' with next_state := transmitSetup
+
+    | transmitPulse     => if ¬s.scl_sync then
+                             s' with next_state := transmitHold
+                           else
+                             s' with next_state := transmitPulse
+
+    | transmitHold      => if s.counter ≠ 1w then
+                             s' with next_state := transmitHold
+                           else if s.bit_idx = 8w then
+                             s' with next_state := transmitAck
+                           else
+                             s' with next_state := transmitSetup
+
+    | transmitAck       => if s.scl_sync then
+                             s' with next_state := transmitAckPulse
+                           else
+                             s' with next_state := transmitAck
+
+    | transmitAckPulse  => if s.scl_sync then
+                             s' with next_state := transmitAckPulse
+                           else if s.host_ack then
+                             s' with next_state := transmitAck
+                           else
+                             s' with next_state := waitForStop
+
+    | waitForStop       => s' with next_state := waitForStop
+
+    | acquireByte       => if s.bit_idx = 8w then
+                             s' with next_state := acquireAckWait
+                           else
+                             s' with next_state := acquireByte
+
+    | acquireAckWait    => if s.counter = 1w ∧ ¬s.scl_sync then
+                             s' with next_state := acquireAckSetup
+                           else
+                             s' with next_state := acquireAckWait
+
+    | acquireAckSetup   => if s.scl_sync then
+                             s' with next_state := acquireAckPulse
+                           else
+                             s' with next_state := acquireAckSetup
+
+    | acquireAckPulse   => if ¬s.scl_sync then
+                             s' with next_state := acquireAckHold
+                           else
+                             s' with next_state := acquireAckPulse
+
+    | acquireAckHold    => if s.counter ≠ 1w then
+                             s' with next_state := acquireAckHold
+                           else if s'.acq_fifo.wready then
+                             s' with next_state := acquireByte
+                           else
+                             s' with next_state := stretchAcqFull
+
+    | stretchAddr       => if ¬s'.acq_fifo.wready then
+                             s' with next_state := stretchAddr
+                           else if s.rw_bit then
+                             s' with next_state := stretchTx
+                           else
+                             s' with next_state := acquireByte
+
+    | stretchTx         => if ¬s'.stretch_tx then
+                             s' with next_state := stretchTxSetup
+                           else
+                             s' with next_state := stretchTx
+
+    | stretchTxSetup    => if s.counter = 1w then
+                             s' with next_state := transmitSetup
+                           else
+                             s' with next_state := stretchTxSetup
+
+    | stretchAcqFull    => if s'.acq_fifo.wready then
+                             s' with next_state := acquireByte
+                           else
+                             s' with next_state := stretchAcqFull
+
+    | _ => s' with next_state := idle
+  in
+    if ~s'.target_idle /\ s.regs.ctrl.enabletarget = 0w then
+      s' with next_state := idle
+    else if s'.start_det then
+      s' with next_state := acquireStart
+    else if s'.stop_det then
+      s' with next_state := idle
+    else
+      s'
 End
 
 Definition i2c_core_read_byte_clr_comb_def:
   i2c_core_read_byte_clr_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with read_byte_clr := (s.fsm_state = recReadHoldBit ∧ s.counter = 1w ∧ s.bit_index = 0w)
+  s' with read_byte_clr := (s.fsm_state = readHoldBit ∧ s.counter = 1w ∧ s.bit_index = 0w)
+End
+
+Definition i2c_core_input_byte_clr_comb_def:
+  i2c_core_input_byte_clr_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with input_byte_clr := (s.fsm_state = acquireStart ∧ s.scl_i_q ∧ ¬s.scl_sync)
 End
 
 Definition i2c_core_shift_data_en_comb_def:
   i2c_core_shift_data_en_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with shift_data_en := (s.fsm_state = recReadClockPulse ∧ s.counter = 1w)
+  s' with shift_data_en := (s.fsm_state = readClockPulse ∧ s.counter = 1w)
 End
 
 Definition i2c_core_next_sda_rx_val_comb_def:
@@ -478,9 +951,9 @@ End
 Definition i2c_core_next_read_byte_comb_def:
   i2c_core_next_read_byte_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   if s'.read_byte_clr then s' with next_read_byte := 0w
-  else if s'.shift_data_en ∧ fext.cio_sda_i then
+  else if s'.shift_data_en ∧ s.sda_sync then
     s' with next_read_byte := (w2w s.read_byte <<~ 1w) || 1w
-  else if s'.shift_data_en ∧ ¬fext.cio_sda_i then
+  else if s'.shift_data_en ∧ ¬s.sda_sync then
     s' with next_read_byte := (w2w s.read_byte <<~ 1w)
   else
     s' with next_read_byte := s.read_byte
@@ -505,6 +978,11 @@ End
 Definition i2c_core_rx_fifo_empty_comb_def:
   i2c_core_rx_fifo_empty_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with rx_fifo := s'.rx_fifo with empty := (s.rx_fifo.rptr = s.rx_fifo.wptr)
+End
+
+Definition i2c_core_rx_fifo_rvalid_comb_def:
+  i2c_core_rx_fifo_rvalid_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with rx_fifo := s'.rx_fifo with rvalid := (~s'.rx_fifo.empty /\ ~s'.under_rst)
 End
 
 Definition i2c_core_rx_fifo_incr_rptr_comb_def:
@@ -539,12 +1017,12 @@ End
 Definition i2c_core_rx_fifo_wvalid_comb_def:
   i2c_core_rx_fifo_wvalid_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with rx_fifo := s'.rx_fifo with wvalid :=
-  (s.fsm_state = recReadHoldBit ∧ s.bit_index = 0w ∧ s.counter = 1w)
+  (s.fsm_state = readHoldBit ∧ s.bit_index = 0w ∧ s.counter = 1w)
 End
 
 Definition i2c_core_rx_fifo_wdata_comb_def:
   i2c_core_rx_fifo_wdata_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  if s.fsm_state = recReadHoldBit ∧ s.bit_index = 0w ∧ s.counter = 1w then
+  if s.fsm_state = readHoldBit ∧ s.bit_index = 0w ∧ s.counter = 1w then
     s' with rx_fifo := s'.rx_fifo with wdata := s.read_byte
   else
     s' with rx_fifo := s'.rx_fifo with wdata := 0w
@@ -555,6 +1033,23 @@ Definition i2c_core_rx_fifo_full_comb_def:
   s' with rx_fifo := s'.rx_fifo with full :=
   ((word_bit 6 s.rx_fifo.wptr ≠ word_bit 6 s.rx_fifo.rptr) ∧
    ((5 >< 0) s.rx_fifo.wptr : 6 word = (5 >< 0) s.rx_fifo.rptr : 6 word))
+End
+
+Definition i2c_core_rx_fifo_wready_comb_def:
+  i2c_core_rx_fifo_wready_comb (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with rx_fifo := s'.rx_fifo with wready := (~s'.rx_fifo.full /\ ~s.under_rst)
+End
+
+Definition i2c_core_rx_fifo_depth_comb_def:
+  i2c_core_rx_fifo_depth_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s':i2c_circuit_state) =
+  if s'.rx_fifo.full then
+    s' with rx_fifo := s'.rx_fifo with depth := 64w
+  else if word_bit 6 s.rx_fifo.wptr = word_bit 6 s.rx_fifo.rptr then
+    s' with rx_fifo := s'.rx_fifo with depth :=
+    ((w2w ((5 >< 0) s.rx_fifo.wptr : 6 word)) - (w2w ((5 >< 0) s.rx_fifo.rptr : 6 word)))
+  else
+    s' with rx_fifo := s'.rx_fifo with depth :=
+    64w - w2w ((5 >< 0) s.rx_fifo.rptr : 6 word) + w2w ((5 >< 0) s.rx_fifo.wptr :  6 word)
 End
 
 Definition i2c_core_rx_fifo_incr_wptr_comb_def:
@@ -599,13 +1094,13 @@ End
 Definition hw2reg_intr_state_nak_de_comb_def:
   hw2reg_intr_state_nak_de_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with hw2reg := s'.hw2reg with intr_state := s'.hw2reg.intr_state with nak_de :=
-  (s.fsm_state = transClockPulseAck ∧ ¬s'.fmt_flag.nak_ok ∧ fext.cio_sda_i )
+  (s.fsm_state = clockPulseAck ∧ ¬s'.fmt_flag.nak_ok ∧ s.sda_sync )
 End
 
 Definition hw2reg_intr_state_nak_d_comb_def:
   hw2reg_intr_state_nak_d_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with hw2reg := s'.hw2reg with intr_state := s'.hw2reg.intr_state with nak_d :=
-  (n2w $ bool_to_bit (s.fsm_state = transClockPulseAck ∧ ¬s'.fmt_flag.nak_ok ∧ fext.cio_sda_i))
+  (n2w $ bool_to_bit (s.fsm_state = clockPulseAck ∧ ¬s'.fmt_flag.nak_ok ∧ s.sda_sync))
   || s'.reg2hw.intr_state.nak_q
 End
 
@@ -617,13 +1112,13 @@ End
 Definition hw2reg_intr_state_cmd_complete_de_comb_def:
   hw2reg_intr_state_cmd_complete_de_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with hw2reg := s'.hw2reg with intr_state := s'.hw2reg.intr_state with cmd_complete_de :=
-  (s.fsm_state = stopHoldStop ∨ s.fsm_state = startSetupStart ∧ s'.log_start ∧ s.pend_restart)
+  (s.fsm_state = holdStop ∨ s.fsm_state = setupStart ∧ s'.log_start ∧ s.pend_restart)
 End
 
 Definition hw2reg_intr_state_cmd_complete_d_comb_def:
   hw2reg_intr_state_cmd_complete_d_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with hw2reg := s'.hw2reg with intr_state := s'.hw2reg.intr_state with cmd_complete_d :=
-  (n2w $ bool_to_bit (s.fsm_state = stopHoldStop ∨ s.fsm_state = startSetupStart ∧ s'.log_start ∧ s.pend_restart))
+  (n2w $ bool_to_bit (s.fsm_state = holdStop ∨ s.fsm_state = setupStart ∧ s'.log_start ∧ s.pend_restart))
   || s'.reg2hw.intr_state.cmd_complete_q
 End
 
@@ -634,15 +1129,17 @@ End
 
 Definition next_pend_restart_comb_def:
   next_pend_restart_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s':i2c_circuit_state) =
-  if s.pend_restart ∧ s.regs.ctrl.enablehost = 0w ∨ s'.log_start then s' with next_pend_restart := F
+  if s.pend_restart ∧ s.regs.ctrl.enablehost = 0w then s' with next_pend_restart := F
   else if s'.req_restart then s' with next_pend_restart := T
+  else if s'.log_start then s' with next_pend_restart := F
   else s' with next_pend_restart := s.pend_restart
 End
 
 Definition next_trans_started_comb_def:
   next_trans_started_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s':i2c_circuit_state) =
-  if s.trans_started ∧ s.regs.ctrl.enablehost = 0w ∨ s'.log_stop then s' with next_trans_started := F
+  if s.trans_started ∧ s.regs.ctrl.enablehost = 0w then s' with next_trans_started := F
   else if s'.log_start then s' with next_trans_started := T
+  else if s'.log_stop then s' with next_trans_started := F
   else s' with next_trans_started := s.trans_started
 End
 
@@ -651,6 +1148,37 @@ Definition next_bit_index_comb_def:
   if s'.bit_clr then s' with next_bit_index := 7w
   else if s'.bit_decr then s' with next_bit_index := s.bit_index - 1w
   else s' with next_bit_index := s.bit_index
+End
+
+Definition i2c_core_status_fmtfull_d_comb_def:
+  i2c_core_status_fmtfull_d_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s':i2c_circuit_state) =
+  s' with hw2reg := s'.hw2reg with status := s'.hw2reg.status with fmtfull_d := if s'.fmt_fifo.wready then 0w else 1w
+End
+
+Definition i2c_core_status_rxfull_d_comb_def:
+  i2c_core_status_rxfull_d_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s':i2c_circuit_state) =
+  s' with hw2reg := s'.hw2reg with status := s'.hw2reg.status with rxfull_d := if s'.rx_fifo.wready then 0w else 1w
+End
+
+Definition i2c_core_status_fmtempty_d_comb_def:
+  i2c_core_status_fmtempty_d_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s':i2c_circuit_state) =
+  s' with hw2reg := s'.hw2reg with status := s'.hw2reg.status with fmtempty_d := if s'.fmt_fifo.rvalid then 0w else 1w
+End
+
+Definition i2c_core_status_rxempty_d_comb_def:
+  i2c_core_status_rxempty_d_comb (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s':i2c_circuit_state) =
+  s' with hw2reg := s'.hw2reg with status := s'.hw2reg.status with rxempty_d := if s'.rx_fifo.rvalid then 0w else 1w
+End
+
+Definition i2c_core_sync_ff_def:
+  i2c_core_sync_ff (fext : i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  let
+    s' = s' with scl_buf := fext.cio_scl_i;
+    s' = s' with sda_buf := fext.cio_sda_i;
+    s' = s' with scl_sync := s.scl_buf;
+    s' = s' with sda_sync := s.sda_buf;
+  in
+    s'
 End
 
 Definition i2c_core_ff_def:
@@ -673,6 +1201,19 @@ Definition bit_index_ff_def:
   s' with bit_index := s'.next_bit_index
 End
 
+Definition i2c_core_bit_idx_ff_def:
+  i2c_core_bit_idx_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  if s'.start_det then
+    s' with bit_idx := 0w
+  else if s.scl_i_q ∧ ¬s.scl_sync then
+    if s'.input_byte_clr ∨ s.bit_idx = 8w then
+      s' with bit_idx := 0w
+    else
+      s' with bit_idx := s.bit_idx + 1w
+  else
+    s'
+End
+
 Definition pend_restart_ff_def:
   pend_restart_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with pend_restart := s'.next_pend_restart
@@ -693,6 +1234,16 @@ Definition read_byte_ff_def:
   read_byte_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
   s' with read_byte := s'.next_read_byte
 End
+
+Definition i2c_core_input_byte_ff_def:
+  i2c_core_input_byte_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  if s'.input_byte_clr then
+    s' with input_byte := 0w
+  else if ¬s.scl_i_q ∧ s.scl_sync ∧ s.bit_idx ≠ 8w then
+    s' with input_byte := ((7 >< 1) s'.input_byte: 7 word) @@ (if s.sda_sync then 1w else 0w: word1)
+  else
+    s'
+End
         
 Definition scl_rx_val_ff_def:
   scl_rx_val_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
@@ -706,15 +1257,48 @@ End
 
 Definition scl_i_q_ff_def:
   scl_i_q_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
-  s' with scl_i_q := n2w $ bool_to_bit fext.cio_scl_i
+  s' with scl_i_q := s.scl_sync
+End
+
+Definition sda_i_q_ff_def:
+  sda_i_q_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with sda_i_q := s.sda_sync
+End
+
+Definition i2c_core_under_rst_ff_def:
+  i2c_core_under_rst_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  s' with under_rst := F
+End
+
+Definition i2c_core_rw_bit_ff_def:
+  i2c_core_rw_bit_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  if s.bit_idx = 8w ∧ s'.address_match ∧ s.fsm_state = addrRead then
+    s' with rw_bit := word_bit 0 s.input_byte
+  else
+    s'
+End
+
+Definition i2c_core_host_ack_ff_def:
+  i2c_core_host_ack_ff (fext: i2c_circuit_ext_state) (s: i2c_circuit_state) (s': i2c_circuit_state) =
+  if ¬s.scl_i_q ∧ s.scl_sync ∧ s.bit_idx = 8w then
+    s' with host_ack := ¬s.sda_sync
+  else
+    s'
 End
         
 val init_tm = add_x_inits ``
   <|
     regs := ^i2c_regs_init_tm;
     reg2hw := ^i2c_reg2hw_init_tm;
+    scl_buf := T;
+    sda_buf := T;
+    scl_sync := T;
+    sda_sync := T;
     fmt_fifo_regfile := K 0w;
     rx_fifo_regfile := K 0w;
+    tx_fifo_regfile := K 0w;
+    acq_fifo_regfile := K 0w;
+    under_rst := T;
   |>
 ``;
 
@@ -723,86 +1307,73 @@ Definition i2c_circuit_init_def:
 End
 
 Definition i2c_core_ffs1_def:
-  i2c_core_ffs1 = [i2c_core_counter_ff; i2c_core_stretch_idle_cnt_ff; fmt_fifo_rptr_ff;
-                   fmt_fifo_regfile_ff; i2c_core_rx_fifo_wptr_ff; fmt_fifo_wptr_ff; bit_index_ff;
-                   pend_restart_ff; trans_started_ff; byte_index_ff; read_byte_ff; i2c_core_rx_fifo_rptr_ff; i2c_core_rx_fifo_regfile;
-                   scl_rx_val_ff; sda_rx_val_ff; i2c_core_ff;
-                   (*fmt_threshold_q_ff; rx_threshold_q_ff; *) scl_i_q_ff]
+  i2c_core_ffs1 = [
+    fmt_fifo_rptr_ff; fmt_fifo_regfile_ff; fmt_fifo_wptr_ff;
+    i2c_core_tx_fifo_rptr_ff; i2c_core_tx_fifo_regfile; i2c_core_tx_fifo_wptr_ff;
+    i2c_core_acq_fifo_rptr_ff; i2c_core_acq_fifo_regfile; i2c_core_acq_fifo_wptr_ff;
+    i2c_core_rx_fifo_rptr_ff; i2c_core_rx_fifo_regfile; i2c_core_rx_fifo_wptr_ff;
+    i2c_core_sync_ff; i2c_core_ff; i2c_core_counter_ff;
+    i2c_core_stretch_idle_cnt_ff; bit_index_ff; i2c_core_bit_idx_ff;
+    pend_restart_ff; trans_started_ff; byte_index_ff; read_byte_ff;
+    i2c_core_input_byte_ff; scl_rx_val_ff; sda_rx_val_ff; scl_i_q_ff; sda_i_q_ff;
+    i2c_core_under_rst_ff; i2c_core_rw_bit_ff; i2c_core_host_ack_ff
+  ]
 End
 
-(* with dependency taken into account *)        
 Definition i2c_core_combs_def:
   i2c_core_combs = [
+    i2c_core_target_loopback_comb; i2c_core_start_det_comb; i2c_core_stop_det_comb;
+    i2c_core_address_match_comb; i2c_core_target_idle_comb; i2c_core_host_idle_comb;
+    i2c_core_event_host_timeout_comb; i2c_core_event_stretch_timeout_comb;
     fmt_fifo_reset; fmt_fifo_rdata; fmt_fifo_rready; fmt_fifo_empty;
-    fmt_fifo_incr_rptr; fmt_fifo_counter_rptr_wrap;
-    fmt_fifo_counter_rptr_wrap_cnt; fmt_fifo_wvalid; fmt_fifo_full;
-    fmt_fifo_incr_wptr; fmt_fifo_wdata; fmt_fifo_counter_wptr_wrap;
-    fmt_fifo_counter_wptr_wrap_cnt; i2c_core_delay_comb;
-    i2c_core_curr_delay_comb; i2c_core_load_tcount_comb;
+    fmt_fifo_incr_rptr; fmt_fifo_counter_rptr_wrap; fmt_fifo_counter_rptr_wrap_cnt;
+    fmt_fifo_wvalid; fmt_fifo_full; fmt_fifo_wready; fmt_fifo_incr_wptr;
+    fmt_fifo_wdata; fmt_fifo_counter_wptr_wrap; fmt_fifo_counter_wptr_wrap_cnt;
+    i2c_core_delay_comb; i2c_core_curr_delay_comb; i2c_core_load_tcount_comb;
     i2c_core_log_start_comb; i2c_core_log_stop_comb; fmt_fifo_rvalid;
-    fmt_fifo_flag_start_before; fmt_fifo_flag_stop_after;
-    fmt_fifo_flag_read_bytes; fmt_fifo_flag_nak_ok; fmt_byte; req_restart;
-    bit_clr; bit_decr; i2c_core_stretch_en_comb; i2c_core_scl_d_comb;
-    i2c_core_next_scl_rx_val_comb; i2c_core_next_stretch_idle_cnt;
-    i2c_core_next_counter; i2c_core_byte_clr_comb; i2c_core_byte_decr_comb;
-    i2c_core_byte_num_comb; i2c_core_next_byte_index_comb; fifo_depth;
-    counter_gt_one_comb; i2c_core_next_state; i2c_core_read_byte_clr_comb;
+    fmt_fifo_flag_start_before; fmt_fifo_flag_stop_after; fmt_fifo_flag_read_bytes;
+    fmt_fifo_flag_nak_ok; i2c_core_tx_fifo_rdata_comb; i2c_core_tx_fifo_empty_comb;
+    i2c_core_tx_fifo_rvalid_comb; i2c_core_tx_fifo_full_comb;
+    i2c_core_tx_fifo_wready_comb; i2c_core_tx_fifo_depth_comb;
+    i2c_core_acq_fifo_rdata_comb; i2c_core_acq_fifo_empty_comb;
+    i2c_core_acq_fifo_rvalid_comb; i2c_core_acq_fifo_full_comb;
+    i2c_core_acq_fifo_wready_comb; i2c_core_acq_fifo_depth_comb;
+    i2c_core_tx_fifo_reset_comb; i2c_core_tx_fifo_rready_comb;
+    i2c_core_tx_fifo_wvalid_comb; i2c_core_tx_fifo_wdata_comb;
+    i2c_core_tx_fifo_incr_rptr_comb; i2c_core_tx_fifo_counter_rptr_wrap_comb;
+    i2c_core_tx_fifo_counter_rptr_wrap_cnt_comb; i2c_core_tx_fifo_incr_wptr_comb;
+    i2c_core_tx_fifo_counter_wptr_wrap_comb;
+    i2c_core_tx_fifo_counter_wptr_wrap_cnt_comb; i2c_core_acq_fifo_reset_comb;
+    i2c_core_acq_fifo_rready_comb; i2c_core_acq_fifo_wvalid_comb;
+    i2c_core_acq_fifo_wdata_comb; i2c_core_acq_fifo_incr_rptr_comb;
+    i2c_core_acq_fifo_counter_rptr_wrap_comb;
+    i2c_core_acq_fifo_counter_rptr_wrap_cnt_comb; i2c_core_acq_fifo_incr_wptr_comb;
+    i2c_core_acq_fifo_counter_wptr_wrap_comb;
+    i2c_core_acq_fifo_counter_wptr_wrap_cnt_comb; i2c_core_stretch_tx_comb;
+    fmt_byte; req_restart; bit_clr; bit_decr; i2c_core_stretch_en_comb;
+    i2c_core_scl_d_comb; i2c_core_next_scl_rx_val_comb;
+    i2c_core_next_stretch_idle_cnt; i2c_core_next_counter; i2c_core_byte_clr_comb;
+    i2c_core_byte_decr_comb; i2c_core_byte_num_comb; i2c_core_next_byte_index_comb;
+    fifo_depth; counter_gt_one_comb; i2c_core_next_state;
+    i2c_core_read_byte_clr_comb; i2c_core_input_byte_clr_comb;
     i2c_core_shift_data_en_comb; i2c_core_next_sda_rx_val_comb;
-    i2c_core_rx_fifo_reset_comb; i2c_core_rx_fifo_rdata_comb;
-    i2c_core_rx_fifo_rready_comb; i2c_core_rx_fifo_empty_comb;
+    i2c_core_next_read_byte_comb; i2c_core_rx_fifo_reset_comb;
+    i2c_core_rx_fifo_rdata_comb; i2c_core_rx_fifo_rready_comb;
+    i2c_core_rx_fifo_empty_comb; i2c_core_rx_fifo_rvalid_comb;
     i2c_core_rx_fifo_incr_rptr_comb; i2c_core_rx_fifo_counter_rptr_wrap_comb;
-    i2c_core_rx_fifo_counter_rptr_wrap_cnt_comb;
-    i2c_core_rx_fifo_wvalid_comb; i2c_core_rx_fifo_wdata_comb;
-    i2c_core_rx_fifo_full_comb; i2c_core_rx_fifo_incr_wptr_comb;
-    i2c_core_rx_fifo_counter_wptr_wrap_comb;
-    i2c_core_rx_fifo_counter_wptr_wrap_cnt_comb;
-    hw2reg_intr_state_nak_de_comb; hw2reg_intr_state_nak_d_comb; next_intr_nak_comb;
-    hw2reg_intr_state_cmd_complete_de_comb;
-    hw2reg_intr_state_cmd_complete_d_comb; next_pend_restart_comb;
-    next_trans_started_comb; next_bit_index_comb; i2c_core_next_read_byte_comb
-(*                             
-    fmt_threshold_d_comb; hw2reg_intr_state_fmt_threshold_d_comb;
-    hw2reg_intr_state_fmt_threshold_de_comb;
-    hw2reg_intr_state_fmt_threshold_d_comb; hw2reg_intr_state_rx_threshold_de_comb;
-    hw2reg_intr_state_fmt_overflow_d_comb; hw2reg_intr_state_fmt_overflow_de_comb;
-    hw2reg_intr_state_rx_overflow_d_comb; hw2reg_intr_state_rx_overflow_de_comb;
-    hw2reg_intr_state_scl_interference_d_comb; hw2reg_intr_state_scl_interference_de_comb;
-    hw2reg_intr_state_sda_unstable_d_comb; hw2reg_intr_state_sda_unstable_de_comb
-  *)
-  ]                 
+    i2c_core_rx_fifo_counter_rptr_wrap_cnt_comb; i2c_core_rx_fifo_wvalid_comb;
+    i2c_core_rx_fifo_wdata_comb; i2c_core_rx_fifo_full_comb;
+    i2c_core_rx_fifo_wready_comb; i2c_core_rx_fifo_depth_comb;
+    i2c_core_rx_fifo_incr_wptr_comb; i2c_core_rx_fifo_counter_wptr_wrap_comb;
+    i2c_core_rx_fifo_counter_wptr_wrap_cnt_comb; hw2reg_intr_state_nak_de_comb;
+    hw2reg_intr_state_nak_d_comb; next_intr_nak_comb;
+    hw2reg_intr_state_cmd_complete_de_comb; hw2reg_intr_state_cmd_complete_d_comb;
+    next_intr_cmd_complete_comb; next_pend_restart_comb; next_trans_started_comb;
+    next_bit_index_comb; i2c_core_status_fmtfull_d_comb;
+    i2c_core_status_rxfull_d_comb; i2c_core_status_fmtempty_d_comb;
+    i2c_core_status_rxempty_d_comb
+  ]
 End
-        
-
-(* basis --- successfully generated the deeply embedded *)
-(*
-Definition i2c_core_combs_def:
-  i2c_core_combs = [i2c_core_rx_fifo_counter_wptr_wrap_comb; i2c_core_rx_fifo_counter_wptr_wrap_cnt_comb;
-                    i2c_core_delay_comb; i2c_core_curr_delay_comb; i2c_core_load_tcount_comb;
-                    i2c_core_stretch_en_comb; i2c_core_scl_d_comb; i2c_core_next_stretch_idle_cnt;
-                    i2c_core_next_counter; i2c_core_next_state; fmt_fifo_reset; counter_gt_one_comb;
-                    fmt_fifo_rdata; fmt_fifo_rready; fmt_fifo_empty;
-                    fmt_fifo_counter_rptr_wrap; fmt_fifo_counter_rptr_wrap_cnt;
-                    fmt_fifo_wvalid; fmt_fifo_full; fmt_fifo_incr_wptr; fmt_fifo_wdata;
-                    fmt_fifo_counter_wptr_wrap;
-                    fmt_fifo_counter_wptr_wrap_cnt; i2c_core_log_start_comb; i2c_core_log_stop_comb;
-                    fmt_fifo_rvalid;
-                    fmt_fifo_flag_start_before; fmt_fifo_flag_stop_after; fmt_fifo_flag_read_bytes; fmt_byte;
-                    req_restart; bit_clr; bit_decr; i2c_core_next_scl_rx_val_comb; i2c_core_byte_clr_comb;
-                    i2c_core_byte_num_comb; i2c_core_next_byte_index_comb; fifo_depth;
-                    i2c_core_read_byte_clr_comb;
-                    i2c_core_shift_data_en_comb; i2c_core_next_sda_rx_val_comb; i2c_core_next_read_byte_comb;
-                    i2c_core_rx_fifo_reset_comb; i2c_core_rx_fifo_rdata_comb; i2c_core_rx_fifo_rready_comb;
-                    i2c_core_rx_fifo_empty_comb; i2c_core_rx_fifo_incr_rptr_comb;
-                    i2c_core_rx_fifo_counter_rptr_wrap_comb;
-                    i2c_core_rx_fifo_counter_rptr_wrap_cnt_comb; i2c_core_rx_fifo_wvalid_comb;
-                    i2c_core_rx_fifo_wdata_comb;
-                    i2c_core_rx_fifo_full_comb; i2c_core_rx_fifo_incr_wptr_comb;
-                    hw2reg_intr_state_nak_de_comb; next_intr_nak_comb;
-                    hw2reg_intr_state_cmd_complete_de_comb; hw2reg_intr_state_cmd_complete_d_comb;
-                    next_intr_cmd_complete_comb;
-                    next_pend_restart_comb; next_trans_started_comb; next_bit_index_comb]
-End
-*)
 
 Definition i2c_circuit_def:
   i2c_circuit = mk_module
@@ -824,21 +1395,34 @@ Theorem ff_asm1:
 Proof
   LET_ELIM_TAC
   >> rw [i2c_core_ffs1_def]
-  >> rw [Abbr ‘s''’, i2c_core_counter_ff_def, i2c_core_stretch_idle_cnt_ff_def,
-         fmt_fifo_rptr_ff_def, fmt_fifo_regfile_ff_def, i2c_core_rx_fifo_wptr_ff_def, fmt_fifo_wptr_ff_def,
-         bit_index_ff_def, pend_restart_ff_def, trans_started_ff_def, byte_index_ff_def, i2c_core_rx_fifo_rptr_ff_def,
-         i2c_core_rx_fifo_regfile_def, i2c_core_ff_def, read_byte_ff_def, scl_rx_val_ff_def, sda_rx_val_ff_def,
-         scl_i_q_ff_def]
+  >> rw [Abbr ‘s''’, fmt_fifo_rptr_ff_def, fmt_fifo_regfile_ff_def, fmt_fifo_wptr_ff_def,
+         i2c_core_tx_fifo_rptr_ff_def, i2c_core_tx_fifo_regfile_def,
+         i2c_core_tx_fifo_wptr_ff_def, i2c_core_acq_fifo_rptr_ff_def,
+         i2c_core_acq_fifo_regfile_def, i2c_core_acq_fifo_wptr_ff_def,
+         i2c_core_rx_fifo_rptr_ff_def, i2c_core_rx_fifo_regfile_def,
+         i2c_core_rx_fifo_wptr_ff_def, i2c_core_sync_ff_def, i2c_core_ff_def,
+         i2c_core_counter_ff_def, i2c_core_stretch_idle_cnt_ff_def, bit_index_ff_def,
+         i2c_core_bit_idx_ff_def, pend_restart_ff_def, trans_started_ff_def,
+         byte_index_ff_def, read_byte_ff_def, i2c_core_input_byte_ff_def,
+         scl_rx_val_ff_def, sda_rx_val_ff_def, scl_i_q_ff_def, sda_i_q_ff_def,
+         i2c_core_under_rst_ff_def, i2c_core_rw_bit_ff_def, i2c_core_host_ack_ff_def]
 QED
 
 Theorem ff_asm2:
   EVERY (λproc. (proc fext s s').hw2reg = s'.hw2reg) i2c_core_ffs1
 Proof
-  rw [i2c_core_ffs1_def, i2c_core_counter_ff_def, i2c_core_stretch_idle_cnt_ff_def,
-      fmt_fifo_rptr_ff_def, fmt_fifo_regfile_ff_def, i2c_core_rx_fifo_wptr_ff_def, fmt_fifo_wptr_ff_def,
-      bit_index_ff_def, pend_restart_ff_def, trans_started_ff_def, byte_index_ff_def, i2c_core_rx_fifo_rptr_ff_def,
-      i2c_core_rx_fifo_regfile_def, i2c_core_ff_def, read_byte_ff_def, scl_rx_val_ff_def, sda_rx_val_ff_def,
-      scl_i_q_ff_def]
+  rw [i2c_core_ffs1_def]
+  >> rw [fmt_fifo_rptr_ff_def, fmt_fifo_regfile_ff_def, fmt_fifo_wptr_ff_def,
+      i2c_core_tx_fifo_rptr_ff_def, i2c_core_tx_fifo_regfile_def,
+      i2c_core_tx_fifo_wptr_ff_def, i2c_core_acq_fifo_rptr_ff_def,
+      i2c_core_acq_fifo_regfile_def, i2c_core_acq_fifo_wptr_ff_def,
+      i2c_core_rx_fifo_rptr_ff_def, i2c_core_rx_fifo_regfile_def,
+      i2c_core_rx_fifo_wptr_ff_def, i2c_core_sync_ff_def, i2c_core_ff_def,
+      i2c_core_counter_ff_def, i2c_core_stretch_idle_cnt_ff_def, bit_index_ff_def,
+      i2c_core_bit_idx_ff_def, pend_restart_ff_def, trans_started_ff_def,
+      byte_index_ff_def, read_byte_ff_def, i2c_core_input_byte_ff_def,
+      scl_rx_val_ff_def, sda_rx_val_ff_def, scl_i_q_ff_def, sda_i_q_ff_def,
+      i2c_core_under_rst_ff_def, i2c_core_rw_bit_ff_def, i2c_core_host_ack_ff_def]
 QED
 
 Theorem comb_asm1:
@@ -854,27 +1438,67 @@ Theorem comb_asm1:
 Proof
   LET_ELIM_TAC
   >> rw [i2c_core_combs_def]
-  >> rw [Abbr ‘s''’, i2c_core_rx_fifo_counter_wptr_wrap_comb_def, i2c_core_rx_fifo_counter_wptr_wrap_cnt_comb_def,
-         i2c_core_delay_comb_def, i2c_core_curr_delay_comb_def, i2c_core_load_tcount_comb_def,
-         i2c_core_stretch_en_comb_def, i2c_core_scl_d_comb_def, i2c_core_next_stretch_idle_cnt_def,
-         i2c_core_next_counter_def, i2c_core_next_state_def, fmt_fifo_reset_def, counter_gt_one_comb_def,
-         fmt_fifo_rdata_def, fmt_fifo_rready_def, fmt_fifo_empty_def,
-         fmt_fifo_counter_rptr_wrap_def, fmt_fifo_counter_rptr_wrap_cnt_def,
-         fmt_fifo_wvalid_def, fmt_fifo_full_def, fmt_fifo_incr_wptr_def, fmt_fifo_wdata_def, fmt_fifo_counter_wptr_wrap_def,
-         fmt_fifo_counter_wptr_wrap_cnt_def, i2c_core_log_start_comb_def, i2c_core_log_stop_comb_def, fmt_fifo_rvalid_def,
-         fmt_fifo_flag_start_before_def, fmt_fifo_flag_stop_after_def, fmt_fifo_flag_read_bytes_def, fmt_byte_def,
-         req_restart_def, bit_clr_def, bit_decr_def, i2c_core_next_scl_rx_val_comb_def, i2c_core_byte_clr_comb_def,
-         i2c_core_byte_num_comb_def, i2c_core_next_byte_index_comb_def, fifo_depth_def, i2c_core_read_byte_clr_comb_def,
-         i2c_core_shift_data_en_comb_def, i2c_core_next_sda_rx_val_comb_def, i2c_core_next_read_byte_comb_def,
-         i2c_core_rx_fifo_reset_comb_def, i2c_core_rx_fifo_rdata_comb_def, i2c_core_rx_fifo_rready_comb_def,
-         i2c_core_rx_fifo_empty_comb_def, i2c_core_rx_fifo_incr_rptr_comb_def, i2c_core_rx_fifo_counter_rptr_wrap_comb_def,
-         i2c_core_rx_fifo_counter_rptr_wrap_cnt_comb_def, i2c_core_rx_fifo_wvalid_comb_def, i2c_core_rx_fifo_wdata_comb_def,
-         i2c_core_rx_fifo_full_comb_def, i2c_core_rx_fifo_incr_wptr_comb_def,
-         hw2reg_intr_state_nak_de_comb_def, next_intr_nak_comb_def,
-         hw2reg_intr_state_cmd_complete_de_comb_def, hw2reg_intr_state_cmd_complete_d_comb_def, next_intr_cmd_complete_comb_def,
-         next_pend_restart_comb_def, next_trans_started_comb_def, next_bit_index_comb_def,
-         i2c_core_byte_decr_comb_def, fmt_fifo_flag_nak_ok_def, fmt_fifo_incr_rptr_def,
-         hw2reg_intr_state_nak_d_comb_def]
+  >> rw [Abbr ‘s''’, i2c_core_target_loopback_comb_def, i2c_core_start_det_comb_def,
+         i2c_core_stop_det_comb_def, i2c_core_address_match_comb_def,
+         i2c_core_target_idle_comb_def, i2c_core_host_idle_comb_def,
+         i2c_core_event_host_timeout_comb_def, i2c_core_event_stretch_timeout_comb_def,
+         fmt_fifo_reset_def, fmt_fifo_rdata_def, fmt_fifo_rready_def, fmt_fifo_empty_def,
+         fmt_fifo_incr_rptr_def, fmt_fifo_counter_rptr_wrap_def,
+         fmt_fifo_counter_rptr_wrap_cnt_def, fmt_fifo_wvalid_def, fmt_fifo_full_def,
+         fmt_fifo_wready_def, fmt_fifo_incr_wptr_def, fmt_fifo_wdata_def,
+         fmt_fifo_counter_wptr_wrap_def, fmt_fifo_counter_wptr_wrap_cnt_def,
+         i2c_core_delay_comb_def, i2c_core_curr_delay_comb_def,
+         i2c_core_load_tcount_comb_def, i2c_core_log_start_comb_def,
+         i2c_core_log_stop_comb_def, fmt_fifo_rvalid_def, fmt_fifo_flag_start_before_def,
+         fmt_fifo_flag_stop_after_def, fmt_fifo_flag_read_bytes_def,
+         fmt_fifo_flag_nak_ok_def, i2c_core_tx_fifo_rdata_comb_def,
+         i2c_core_tx_fifo_empty_comb_def, i2c_core_tx_fifo_rvalid_comb_def,
+         i2c_core_tx_fifo_full_comb_def, i2c_core_tx_fifo_wready_comb_def,
+         i2c_core_tx_fifo_depth_comb_def, i2c_core_acq_fifo_rdata_comb_def,
+         i2c_core_acq_fifo_empty_comb_def, i2c_core_acq_fifo_rvalid_comb_def,
+         i2c_core_acq_fifo_full_comb_def, i2c_core_acq_fifo_wready_comb_def,
+         i2c_core_acq_fifo_depth_comb_def, i2c_core_tx_fifo_reset_comb_def,
+         i2c_core_tx_fifo_rready_comb_def, i2c_core_tx_fifo_wvalid_comb_def,
+         i2c_core_tx_fifo_wdata_comb_def, i2c_core_tx_fifo_incr_rptr_comb_def,
+         i2c_core_tx_fifo_counter_rptr_wrap_comb_def,
+         i2c_core_tx_fifo_counter_rptr_wrap_cnt_comb_def,
+         i2c_core_tx_fifo_incr_wptr_comb_def,
+         i2c_core_tx_fifo_counter_wptr_wrap_comb_def,
+         i2c_core_tx_fifo_counter_wptr_wrap_cnt_comb_def,
+         i2c_core_acq_fifo_reset_comb_def, i2c_core_acq_fifo_rready_comb_def,
+         i2c_core_acq_fifo_wvalid_comb_def, i2c_core_acq_fifo_wdata_comb_def,
+         i2c_core_acq_fifo_incr_rptr_comb_def,
+         i2c_core_acq_fifo_counter_rptr_wrap_comb_def,
+         i2c_core_acq_fifo_counter_rptr_wrap_cnt_comb_def,
+         i2c_core_acq_fifo_incr_wptr_comb_def,
+         i2c_core_acq_fifo_counter_wptr_wrap_comb_def,
+         i2c_core_acq_fifo_counter_wptr_wrap_cnt_comb_def, i2c_core_stretch_tx_comb_def,
+         fmt_byte_def, req_restart_def, bit_clr_def, bit_decr_def,
+         i2c_core_stretch_en_comb_def, i2c_core_scl_d_comb_def,
+         i2c_core_next_scl_rx_val_comb_def, i2c_core_next_stretch_idle_cnt_def,
+         i2c_core_next_counter_def, i2c_core_byte_clr_comb_def,
+         i2c_core_byte_decr_comb_def, i2c_core_byte_num_comb_def,
+         i2c_core_next_byte_index_comb_def, fifo_depth_def, counter_gt_one_comb_def,
+         i2c_core_next_state_def, i2c_core_read_byte_clr_comb_def,
+         i2c_core_input_byte_clr_comb_def, i2c_core_shift_data_en_comb_def,
+         i2c_core_next_sda_rx_val_comb_def, i2c_core_next_read_byte_comb_def,
+         i2c_core_rx_fifo_reset_comb_def, i2c_core_rx_fifo_rdata_comb_def,
+         i2c_core_rx_fifo_rready_comb_def, i2c_core_rx_fifo_empty_comb_def,
+         i2c_core_rx_fifo_rvalid_comb_def, i2c_core_rx_fifo_incr_rptr_comb_def,
+         i2c_core_rx_fifo_counter_rptr_wrap_comb_def,
+         i2c_core_rx_fifo_counter_rptr_wrap_cnt_comb_def,
+         i2c_core_rx_fifo_wvalid_comb_def, i2c_core_rx_fifo_wdata_comb_def,
+         i2c_core_rx_fifo_full_comb_def, i2c_core_rx_fifo_wready_comb_def,
+         i2c_core_rx_fifo_depth_comb_def, i2c_core_rx_fifo_incr_wptr_comb_def,
+         i2c_core_rx_fifo_counter_wptr_wrap_comb_def,
+         i2c_core_rx_fifo_counter_wptr_wrap_cnt_comb_def,
+         hw2reg_intr_state_nak_de_comb_def, hw2reg_intr_state_nak_d_comb_def,
+         next_intr_nak_comb_def, hw2reg_intr_state_cmd_complete_de_comb_def,
+         hw2reg_intr_state_cmd_complete_d_comb_def, next_intr_cmd_complete_comb_def,
+         next_pend_restart_comb_def, next_trans_started_comb_def,
+         next_bit_index_comb_def, i2c_core_status_fmtfull_d_comb_def,
+         i2c_core_status_rxfull_d_comb_def, i2c_core_status_fmtempty_d_comb_def,
+         i2c_core_status_rxempty_d_comb_def]
 QED
 
 val _ = export_theory ();
