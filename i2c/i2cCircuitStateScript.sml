@@ -42,6 +42,7 @@ Datatype:
     start_before : bool;
     stop_after : bool;
     read_bytes : bool;
+    read_continue : bool;
     nak_ok : bool;
   |>
 End
@@ -147,6 +148,11 @@ Datatype:
     next_stretch_idle_cnt : 32 word;
     stretch_en : bool;
     scl_d : bool;
+    sda_d : bool;
+    scl_q : bool;
+    sda_q : bool;
+    scl_o : bool;
+    sda_o : bool;
     byte_clr : bool;
     byte_decr : bool;
     byte_num :  9 word;
@@ -158,18 +164,18 @@ Datatype:
     read_byte : 8 word;
     fmt_flag : fmt_flag;
     fmt_byte : 8 word;
-    next_intr_nak_o : bool;
-    next_intr_cmd_complete_o : bool;
+    en_sda_interf_det: bool;
+    sda_rise_cnt: 17 word;
     under_rst : bool;
     fmt_fifo : 13 fifo;
     rx_fifo : 8 fifo;
     tx_fifo : 8 fifo;
     acq_fifo : 10 fifo;
     cnt_gt_one: bool;
-    fmt_threshold_q : 1 word;
-    fmt_threshold_d : 1 word;
-    rx_threshold_q : 1 word;
-    rx_threshold_d : 1 word;
+    fmt_threshold_q : bool;
+    fmt_threshold_d : bool;
+    rx_threshold_q : bool;
+    rx_threshold_d : bool;
     scl_i_q : bool;
     sda_i_q : bool;
     fmt_fifo_regfile : 6 word -> 13 word;
@@ -187,20 +193,25 @@ Datatype:
     host_ack: bool;
     host_idle: bool;
     target_idle: bool;
+    expect_stop: bool;
 
-    (* event_fmt_threshold: bool; *)
-    (* event_rx_threshold: bool; *)
-    (* event_fmt_overflow: bool; *)
-    (* event_rx_overflow: bool; *)
-    (* event_nak: bool; *)
-    (* event_scl_interference: bool; *)
-    (* event_sda_interference: bool; *)
+    event_fmt_threshold: bool;
+    event_rx_threshold: bool;
+    event_fmt_overflow: bool;
+    event_rx_overflow: bool;
+    event_nak: bool;
+    event_scl_interference: bool;
+    event_sda_interference: bool;
     event_stretch_timeout: bool;
-    (* event_sda_unstable: bool; *)
-    (* event_cmd_complete: bool; *)
-    (* event_tx_stretch: bool; *)
-    (* event_tx_overflow: bool; *)
-    (* event_unexp_stop: bool; *)
+    event_sda_unstable: bool;
+    event_cmd_complete: bool;
+    (* Interrupts with `IntrT = "Status"` need this extra field. *)
+    test_tx_stretch: bool;
+    event_tx_stretch: bool;
+    event_tx_overflow: bool;
+    test_acq_full: bool;
+    event_acq_full: bool;
+    event_unexp_stop: bool;
     event_host_timeout: bool;
   |>
 End
