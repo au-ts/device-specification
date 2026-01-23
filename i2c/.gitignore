@@ -4,7 +4,6 @@ i2cRegsCommScript.sml
 i2cRegsCircuitLib.sml
 
 i2c_circuit.sv
-i2c_circuit_eqy.sv
-i2c_circuit_eqy.v
-i2c_reg_top.v
-i2c_reg_top
+i2c_circuit.v
+i2c.v
+i2c

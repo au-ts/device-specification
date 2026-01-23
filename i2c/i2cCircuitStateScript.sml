@@ -138,7 +138,7 @@ Datatype:
     bit_clr : bool;
     bit_decr : bool;
     delay : i2c_delay;
-    curr_delay : 20 word;
+    next_delay : 20 word;
     load_tcount : bool;
     log_start : bool;
     log_stop : bool;
@@ -194,6 +194,9 @@ Datatype:
     host_idle: bool;
     target_idle: bool;
     expect_stop: bool;
+    (* Whether acq_fifo has _two_ free slots (as opposed to one free slot for
+     * acq_fifo.wready). *)
+    acq_fifo_2free: bool;
 
     event_fmt_threshold: bool;
     event_rx_threshold: bool;

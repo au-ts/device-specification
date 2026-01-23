@@ -229,7 +229,7 @@ Definition i2c_tick_def:
                  setup_stop  := (w2w st.regs.timing1.t_r : 20 word) + w2w st.regs.timing4.tsu_sto ;
                  hold_stop   := (w2w st.regs.timing1.t_r : 20 word) + w2w st.regs.timing4.t_buf - w2w st.regs.timing2.tsu_sta ;
               |>;
-      curr_delay = case st.fsm_state of
+      next_delay = case st.fsm_state of
                      Receiving ReadClockLow      => delay.clock_low
                    | Receiving ReadClockPulse    => delay.clock_pulse
                    | Receiving ReadHoldBit       => delay.hold_bit
@@ -296,7 +296,7 @@ Definition i2c_tick_def:
       scl_i : 1 word = n2w $ fnums 0;
       scl_rx_val' : 16 word = ((14 >< 0) st.scl_rx_val : 15 word) @@ scl_i;
       stretch_idle_cnt' = if stretch_en ∧ scl_d ∧ ¬(word_bit 0 scl_i) then st.stretch_idle_cnt + 1w else 0w;
-      counter' = if load_tcount then curr_delay
+      counter' = if load_tcount then next_delay
                  else if st.stretch_idle_cnt = 0w then st.counter - 1w
                  else st.counter;
       byte_clr = (st.fsm_state = Active ∧ fmt_flag_read_bytes);

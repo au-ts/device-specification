@@ -1,0 +1,102 @@
+[gold]
+read_verilog i2c.v
+prep -top i2c_circuit
+
+[gate]
+read_verilog i2c_circuit.v
+prep -top i2c_circuit
+
+[script]
+uniquify
+sim -w -vcd reset.vcd -clock clk_i -resetn rst_ni -rstlen 2 -n 1
+
+[strategy sby]
+use sby
+depth 2
+engine smtbmc bitwuzla
+
+[match *]
+# normal regs
+gold-match inner.u_reg.u_*.d hw2reg_\1_d
+gold-match inner.u_reg.u_*.de hw2reg_\1_de
+gold-match inner.u_reg.u_*.q reg2hw_\1_q
+gold-match inner.u_reg.u_*.qe reg2hw_\1_qe
+gold-match inner.u_reg.u_*.re reg2hw_\1_re
+
+# homogeneous regs
+gold-match inner.u_reg.u_*.d hw2reg_\1_\1_d
+gold-match inner.u_reg.u_*.de hw2reg_\1_\1_de
+gold-match inner.u_reg.u_*.q reg2hw_\1_\1_q
+gold-match inner.u_reg.u_*.qe reg2hw_\1_\1_qe
+gold-match inner.u_reg.u_*.re reg2hw_\1_\1_re
+
+gold-match inner.i2c_core.u_i2c_fsm.state_q fsm_state
+gold-match inner.i2c_core.u_i2c_fsm.tcount_q counter
+gold-match inner.i2c_core.u_i2c_fsm.stretch_idle_cnt stretch_idle_cnt
+gold-match inner.i2c_core.u_i2c_fmtfifo.gen_normal_fifo.fifo_rptr fmt_fifo_rptr
+gold-match inner.i2c_core.u_i2c_fmtfifo.gen_normal_fifo.fifo_wptr fmt_fifo_wptr
+gold-match inner.i2c_core.u_i2c_fmtfifo.gen_normal_fifo.storage fmt_fifo_regfile
+gold-match inner.i2c_core.u_i2c_rxfifo.gen_normal_fifo.fifo_rptr rx_fifo_rptr
+gold-match inner.i2c_core.u_i2c_rxfifo.gen_normal_fifo.fifo_wptr rx_fifo_wptr
+gold-match inner.i2c_core.u_i2c_rxfifo.gen_normal_fifo.storage rx_fifo_regfile
+gold-match inner.i2c_core.u_i2c_txfifo.gen_normal_fifo.fifo_rptr tx_fifo_rptr
+gold-match inner.i2c_core.u_i2c_txfifo.gen_normal_fifo.fifo_wptr tx_fifo_wptr
+gold-match inner.i2c_core.u_i2c_txfifo.gen_normal_fifo.storage tx_fifo_regfile
+gold-match inner.i2c_core.u_i2c_acqfifo.gen_normal_fifo.fifo_rptr acq_fifo_rptr
+gold-match inner.i2c_core.u_i2c_acqfifo.gen_normal_fifo.fifo_wptr acq_fifo_wptr
+gold-match inner.i2c_core.u_i2c_acqfifo.gen_normal_fifo.storage acq_fifo_regfile
+gold-match inner.i2c_core.u_i2c_fsm.bit_index bit_index
+gold-match inner.i2c_core.u_i2c_fsm.pend_restart pend_restart
+gold-match inner.i2c_core.u_i2c_fsm.byte_index byte_index
+gold-match inner.i2c_core.u_i2c_fsm.trans_started trans_started
+gold-match inner.i2c_core.u_i2c_fsm.read_byte read_byte
+gold-match inner.i2c_core.sda_rx_val sda_rx_val
+gold-match inner.i2c_core.scl_rx_val scl_rx_val
+gold-match inner.i2c_core.scl_sync scl_sync
+gold-match inner.i2c_core.sda_sync sda_sync
+gold-match inner.i2c_core.u_i2c_fsm.input_byte input_byte
+gold-match inner.i2c_core.u_i2c_fsm.bit_idx bit_idx
+gold-match inner.i2c_core.u_i2c_fsm.rw_bit_q rw_bit
+gold-match inner.i2c_core.u_i2c_fsm.host_ack host_ack
+gold-match inner.i2c_core.u_i2c_fsm.scl_i_q scl_i_q
+gold-match inner.i2c_core.u_i2c_fsm.sda_i_q sda_i_q
+gold-match inner.i2c_core.fmt_threshold_q fmt_threshold_q
+gold-match inner.i2c_core.rx_threshold_q rx_threshold_q
+gold-match inner.i2c_core.u_i2c_fsm.sda_rise_cnt sda_rise_cnt
+gold-match inner.i2c_core.u_i2c_fsm.scl_q scl_q
+gold-match inner.i2c_core.u_i2c_fsm.sda_q sda_q
+gold-match inner.i2c_core.intr_hw_tx_stretch.genblk1.g_intr_status.test_q test_tx_stretch
+gold-match inner.i2c_core.intr_hw_acq_overflow.genblk1.g_intr_status.test_q test_acq_full
+
+# Equivalence checking now passes without these, but it's nice to keep them so
+# that we can tell what's going on if something breaks.
+gold-match inner.i2c_core.u_i2c_fsm.start_det start_det
+gold-match inner.i2c_core.u_i2c_fsm.stop_det stop_det
+gold-match inner.i2c_core.u_i2c_fsm.acq_fifo_wready acq_fifo_2free
+gold-match inner.i2c_core.u_i2c_fsm.input_byte_clr input_byte_clr
+gold-match inner.i2c_core.u_i2c_fsm.log_start log_start
+gold-match inner.i2c_core.u_i2c_fsm.log_stop log_stop
+gold-match inner.i2c_core.u_i2c_fsm.load_tcount load_tcount
+gold-match inner.i2c_core.u_i2c_fsm.tcount_d next_counter
+
+# next_state stuff
+gold-match inner.i2c_core.u_i2c_fsm.state_d next_state
+gold-match inner.i2c_core.u_i2c_fsm.fmt_flag_stop_after_i fmt_flag_stop_after
+gold-match inner.i2c_core.u_i2c_fsm.fmt_flag_read_bytes_i fmt_flag_read_bytes
+gold-match inner.i2c_core.u_i2c_fsm.fmt_flag_start_before_i fmt_flag_start_before
+gold-match inner.i2c_core.u_i2c_fmtfifo.depth_o fmt_fifo_depth
+gold-match inner.i2c_core.u_i2c_fsm.address_match address_match
+gold-match inner.i2c_core.u_i2c_fsm.stretch_tx stretch_tx
+
+[collect *]
+join inner.u_reg.*.d
+join inner.u_reg.*.q
+
+[partition *]
+# It's relatively common for these signals to be hard-wired to 1 or 0 and the
+# synthesiser to pick up on that in one version but not the other, resulting in
+# an error if that context isn't included.
+amend inner.u_reg.*.d
+amend inner.u_reg.*.de
+
+amend inner.i2c_core.u_i2c_fsm.load_tcount

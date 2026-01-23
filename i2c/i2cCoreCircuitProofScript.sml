@@ -745,7 +745,7 @@ Theorem i2c_combs_flat =
                                fmt_fifo_counter_rptr_wrap_cnt_def, fmt_fifo_wvalid_def, fmt_fifo_full_def,
                                fmt_fifo_incr_wptr_def, fmt_fifo_wdata_def, fmt_fifo_counter_wptr_wrap_def,
                                fmt_fifo_counter_wptr_wrap_cnt_def, i2c_core_delay_comb_def,
-                               i2c_core_curr_delay_comb_def, i2c_core_load_tcount_comb_def,
+                               i2c_core_next_delay_comb_def, i2c_core_load_tcount_comb_def,
                                i2c_core_log_start_comb_def, i2c_core_log_stop_comb_def, fmt_fifo_rvalid_def,
                                fmt_fifo_flag_start_before_def, fmt_fifo_flag_stop_after_def,
                                fmt_fifo_flag_read_bytes_def, fmt_fifo_flag_nak_ok_def, fmt_byte_def, req_restart_def,

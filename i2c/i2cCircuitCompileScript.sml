@@ -1,9 +1,6 @@
-open HolKernel Parse boolLib bossLib;
-open translatorLib verilogPrintLib;
-open i2cRegsCircuitLib;
-open i2cCircuitTheory;
-
-val _ = new_theory "i2cCircuitCompile";
+Theory i2cCircuitCompile
+Ancestors i2cCircuit
+Libs translatorLib verilogPrintLib i2cRegsCircuitLib
 
 Theorem i2c_circuit_alt_def:
 i2c_circuit =
@@ -36,7 +33,7 @@ i2c_circuit =
           fmt_fifo_incr_rptr; fmt_fifo_counter_rptr_wrap; fmt_fifo_counter_rptr_wrap_cnt;
           fmt_fifo_wvalid; fmt_fifo_full; fmt_fifo_wready; fmt_fifo_incr_wptr;
           fmt_fifo_wdata; fmt_fifo_counter_wptr_wrap; fmt_fifo_counter_wptr_wrap_cnt;
-          i2c_core_delay_comb; i2c_core_curr_delay_comb; i2c_core_load_tcount_comb;
+          i2c_core_delay_comb; i2c_core_next_delay_comb; i2c_core_load_tcount_comb;
           i2c_core_log_start_comb; i2c_core_log_stop_comb; fmt_fifo_rvalid;
           fmt_fifo_flag_start_before; fmt_fifo_flag_stop_after; fmt_fifo_flag_read_bytes;
           fmt_fifo_flag_read_continue; fmt_fifo_flag_nak_ok; i2c_core_tx_fifo_rdata_comb;
@@ -45,10 +42,10 @@ i2c_circuit =
           i2c_core_tx_fifo_depth_comb; i2c_core_acq_fifo_rdata_comb;
           i2c_core_acq_fifo_empty_comb; i2c_core_acq_fifo_rvalid_comb;
           i2c_core_acq_fifo_full_comb; i2c_core_acq_fifo_wready_comb;
-          i2c_core_acq_fifo_depth_comb; i2c_core_tx_fifo_reset_comb;
-          i2c_core_tx_fifo_rready_comb; i2c_core_tx_fifo_wvalid_comb;
-          i2c_core_tx_fifo_wdata_comb; i2c_core_tx_fifo_incr_rptr_comb;
-          i2c_core_tx_fifo_counter_rptr_wrap_comb;
+          i2c_core_acq_fifo_depth_comb; i2c_core_acq_fifo_2free_comb;
+          i2c_core_tx_fifo_reset_comb; i2c_core_tx_fifo_rready_comb;
+          i2c_core_tx_fifo_wvalid_comb; i2c_core_tx_fifo_wdata_comb;
+          i2c_core_tx_fifo_incr_rptr_comb; i2c_core_tx_fifo_counter_rptr_wrap_comb;
           i2c_core_tx_fifo_counter_rptr_wrap_cnt_comb; i2c_core_tx_fifo_incr_wptr_comb;
           i2c_core_tx_fifo_counter_wptr_wrap_comb;
           i2c_core_tx_fifo_counter_wptr_wrap_cnt_comb; i2c_core_acq_fifo_reset_comb;
@@ -178,5 +175,3 @@ val verilogstr =
 
 val f = TextIO.openOut "i2c_circuit.sv";
 val _ = output (f, verilogstr);
-
-val _ = export_theory ();
