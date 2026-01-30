@@ -1,5 +1,5 @@
 Theory i2cCircuitCompile
-Ancestors i2cCircuit
+Ancestors i2cCircuit verilogSort
 Libs translatorLib verilogPrintLib i2cRegsCircuitLib
 
 Theorem i2c_circuit_alt_def:
@@ -29,23 +29,23 @@ i2c_circuit =
         ([i2c_reg_top_comb_1;
           i2c_core_target_loopback_comb; i2c_core_start_det_comb; i2c_core_stop_det_comb;
           i2c_core_address_match_comb; i2c_core_target_idle_comb; i2c_core_host_idle_comb;
-          fmt_fifo_reset; fmt_fifo_rdata; fmt_fifo_rready; fmt_fifo_empty;
-          fmt_fifo_incr_rptr; fmt_fifo_counter_rptr_wrap; fmt_fifo_counter_rptr_wrap_cnt;
-          fmt_fifo_wvalid; fmt_fifo_full; fmt_fifo_wready; fmt_fifo_incr_wptr;
-          fmt_fifo_wdata; fmt_fifo_counter_wptr_wrap; fmt_fifo_counter_wptr_wrap_cnt;
-          i2c_core_delay_comb; i2c_core_next_delay_comb; i2c_core_load_tcount_comb;
-          i2c_core_log_start_comb; i2c_core_log_stop_comb; fmt_fifo_rvalid;
-          fmt_fifo_flag_start_before; fmt_fifo_flag_stop_after; fmt_fifo_flag_read_bytes;
-          fmt_fifo_flag_read_continue; fmt_fifo_flag_nak_ok; i2c_core_tx_fifo_rdata_comb;
-          i2c_core_tx_fifo_empty_comb; i2c_core_tx_fifo_rvalid_comb;
-          i2c_core_tx_fifo_full_comb; i2c_core_tx_fifo_wready_comb;
-          i2c_core_tx_fifo_depth_comb; i2c_core_acq_fifo_rdata_comb;
-          i2c_core_acq_fifo_empty_comb; i2c_core_acq_fifo_rvalid_comb;
-          i2c_core_acq_fifo_full_comb; i2c_core_acq_fifo_wready_comb;
-          i2c_core_acq_fifo_depth_comb; i2c_core_acq_fifo_2free_comb;
-          i2c_core_tx_fifo_reset_comb; i2c_core_tx_fifo_rready_comb;
-          i2c_core_tx_fifo_wvalid_comb; i2c_core_tx_fifo_wdata_comb;
-          i2c_core_tx_fifo_incr_rptr_comb; i2c_core_tx_fifo_counter_rptr_wrap_comb;
+          fmt_fifo_reset; fmt_fifo_rready; fmt_fifo_empty; fmt_fifo_rdata;
+          fmt_fifo_rvalid; fmt_fifo_incr_rptr; fmt_fifo_counter_rptr_wrap;
+          fmt_fifo_counter_rptr_wrap_cnt; fmt_fifo_wvalid; fmt_fifo_full; fmt_fifo_wready;
+          fmt_fifo_incr_wptr; fmt_fifo_wdata; fmt_fifo_counter_wptr_wrap;
+          fmt_fifo_counter_wptr_wrap_cnt; i2c_core_delay_comb; i2c_core_log_start_comb;
+          i2c_core_log_stop_comb; fmt_fifo_flag_start_before; fmt_fifo_flag_stop_after;
+          fmt_fifo_flag_read_bytes; fmt_fifo_flag_read_continue; fmt_fifo_flag_nak_ok;
+          i2c_core_tx_fifo_empty_comb; i2c_core_tx_fifo_rdata_comb;
+          i2c_core_tx_fifo_rvalid_comb; i2c_core_tx_fifo_full_comb;
+          i2c_core_tx_fifo_wready_comb; i2c_core_tx_fifo_depth_comb;
+          i2c_core_acq_fifo_empty_comb; i2c_core_acq_fifo_rdata_comb;
+          i2c_core_acq_fifo_rvalid_comb; i2c_core_acq_fifo_full_comb;
+          i2c_core_acq_fifo_wready_comb; i2c_core_acq_fifo_depth_comb;
+          i2c_core_acq_fifo_2free_comb; i2c_core_tx_fifo_reset_comb;
+          i2c_core_tx_fifo_rready_comb; i2c_core_tx_fifo_wvalid_comb;
+          i2c_core_tx_fifo_wdata_comb; i2c_core_tx_fifo_incr_rptr_comb;
+          i2c_core_tx_fifo_counter_rptr_wrap_comb;
           i2c_core_tx_fifo_counter_rptr_wrap_cnt_comb; i2c_core_tx_fifo_incr_wptr_comb;
           i2c_core_tx_fifo_counter_wptr_wrap_comb;
           i2c_core_tx_fifo_counter_wptr_wrap_cnt_comb; i2c_core_acq_fifo_reset_comb;
@@ -55,19 +55,20 @@ i2c_circuit =
           i2c_core_acq_fifo_counter_rptr_wrap_cnt_comb; i2c_core_acq_fifo_incr_wptr_comb;
           i2c_core_acq_fifo_counter_wptr_wrap_comb;
           i2c_core_acq_fifo_counter_wptr_wrap_cnt_comb; i2c_core_stretch_tx_comb;
-          fmt_byte; req_restart; bit_clr; bit_decr; i2c_core_stretch_en_comb;
-          i2c_core_scl_d_comb; i2c_core_sda_d_comb; i2c_core_scl_o_comb;
-          i2c_core_sda_o_comb; i2c_core_cio_scl_o_comb; i2c_core_cio_sda_o_comb;
-          i2c_core_cio_scl_en_o_comb; i2c_core_cio_sda_en_o_comb;
-          i2c_core_next_scl_rx_val_comb; i2c_core_next_counter; i2c_core_byte_clr_comb;
-          i2c_core_byte_decr_comb; i2c_core_byte_num_comb; i2c_core_next_byte_index_comb;
-          fifo_depth; counter_gt_one_comb; i2c_core_next_state;
-          i2c_core_read_byte_clr_comb; i2c_core_input_byte_clr_comb;
-          i2c_core_shift_data_en_comb; i2c_core_next_sda_rx_val_comb;
-          i2c_core_next_read_byte_comb; i2c_core_rx_fifo_reset_comb;
-          i2c_core_rx_fifo_rdata_comb; i2c_core_rx_fifo_rready_comb;
-          i2c_core_rx_fifo_empty_comb; i2c_core_rx_fifo_rvalid_comb;
-          i2c_core_rx_fifo_incr_rptr_comb; i2c_core_rx_fifo_counter_rptr_wrap_comb;
+          i2c_core_load_tcount_comb; fmt_byte; req_restart; bit_clr; bit_decr;
+          i2c_core_stretch_en_comb; i2c_core_scl_d_comb; i2c_core_sda_d_comb;
+          i2c_core_scl_o_comb; i2c_core_sda_o_comb; i2c_core_cio_scl_o_comb;
+          i2c_core_cio_sda_o_comb; i2c_core_cio_scl_en_o_comb; i2c_core_cio_sda_en_o_comb;
+          i2c_core_next_scl_rx_val_comb; i2c_core_byte_clr_comb; i2c_core_byte_decr_comb;
+          i2c_core_byte_num_comb; i2c_core_next_byte_index_comb; fifo_depth;
+          counter_gt_one_comb; i2c_core_next_state; i2c_core_next_delay_comb;
+          i2c_core_next_counter; i2c_core_read_byte_clr_comb;
+          i2c_core_input_byte_clr_comb; i2c_core_shift_data_en_comb;
+          i2c_core_next_sda_rx_val_comb; i2c_core_next_read_byte_comb;
+          i2c_core_rx_fifo_reset_comb; i2c_core_rx_fifo_rready_comb;
+          i2c_core_rx_fifo_empty_comb; i2c_core_rx_fifo_rdata_comb;
+          i2c_core_rx_fifo_rvalid_comb; i2c_core_rx_fifo_incr_rptr_comb;
+          i2c_core_rx_fifo_counter_rptr_wrap_comb;
           i2c_core_rx_fifo_counter_rptr_wrap_cnt_comb; i2c_core_rx_fifo_wvalid_comb;
           i2c_core_rx_fifo_wdata_comb; i2c_core_rx_fifo_full_comb;
           i2c_core_rx_fifo_wready_comb; i2c_core_rx_fifo_depth_comb;
@@ -165,6 +166,12 @@ in
   val tstate = init_translator i2c_circuit_alt_def [] comms;
   val trans_thm = module2hardware tstate i2c_circuit_alt_def [] outputs comms;
 end
+
+Theorem i2c_circuit_v_combs_sorted:
+  sort_by_deps i2c_circuit_v_combs = INR i2c_circuit_v_combs
+Proof
+  EVAL_TAC
+QED
 
 val verilogstr =
   definition "i2c_circuit_v_def"

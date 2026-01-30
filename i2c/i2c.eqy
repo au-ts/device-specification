@@ -33,18 +33,9 @@ gold-match inner.u_reg.u_*.re reg2hw_\1_\1_re
 gold-match inner.i2c_core.u_i2c_fsm.state_q fsm_state
 gold-match inner.i2c_core.u_i2c_fsm.tcount_q counter
 gold-match inner.i2c_core.u_i2c_fsm.stretch_idle_cnt stretch_idle_cnt
-gold-match inner.i2c_core.u_i2c_fmtfifo.gen_normal_fifo.fifo_rptr fmt_fifo_rptr
-gold-match inner.i2c_core.u_i2c_fmtfifo.gen_normal_fifo.fifo_wptr fmt_fifo_wptr
-gold-match inner.i2c_core.u_i2c_fmtfifo.gen_normal_fifo.storage fmt_fifo_regfile
-gold-match inner.i2c_core.u_i2c_rxfifo.gen_normal_fifo.fifo_rptr rx_fifo_rptr
-gold-match inner.i2c_core.u_i2c_rxfifo.gen_normal_fifo.fifo_wptr rx_fifo_wptr
-gold-match inner.i2c_core.u_i2c_rxfifo.gen_normal_fifo.storage rx_fifo_regfile
-gold-match inner.i2c_core.u_i2c_txfifo.gen_normal_fifo.fifo_rptr tx_fifo_rptr
-gold-match inner.i2c_core.u_i2c_txfifo.gen_normal_fifo.fifo_wptr tx_fifo_wptr
-gold-match inner.i2c_core.u_i2c_txfifo.gen_normal_fifo.storage tx_fifo_regfile
-gold-match inner.i2c_core.u_i2c_acqfifo.gen_normal_fifo.fifo_rptr acq_fifo_rptr
-gold-match inner.i2c_core.u_i2c_acqfifo.gen_normal_fifo.fifo_wptr acq_fifo_wptr
-gold-match inner.i2c_core.u_i2c_acqfifo.gen_normal_fifo.storage acq_fifo_regfile
+gold-match inner.i2c_core.u_i2c_*fifo.gen_normal_fifo.fifo_rptr \1_fifo_rptr
+gold-match inner.i2c_core.u_i2c_*fifo.gen_normal_fifo.fifo_wptr \1_fifo_wptr
+gold-match inner.i2c_core.u_i2c_*fifo.gen_normal_fifo.storage \1_fifo_regfile
 gold-match inner.i2c_core.u_i2c_fsm.bit_index bit_index
 gold-match inner.i2c_core.u_i2c_fsm.pend_restart pend_restart
 gold-match inner.i2c_core.u_i2c_fsm.byte_index byte_index
@@ -78,6 +69,7 @@ gold-match inner.i2c_core.u_i2c_fsm.log_start log_start
 gold-match inner.i2c_core.u_i2c_fsm.log_stop log_stop
 gold-match inner.i2c_core.u_i2c_fsm.load_tcount load_tcount
 gold-match inner.i2c_core.u_i2c_fsm.tcount_d next_counter
+gold-match inner.i2c_core.u_i2c_*fifo.rvalid_o \1_fifo_rvalid
 
 # next_state stuff
 gold-match inner.i2c_core.u_i2c_fsm.state_d next_state
@@ -98,5 +90,9 @@ join inner.u_reg.*.q
 # an error if that context isn't included.
 amend inner.u_reg.*.d
 amend inner.u_reg.*.de
+
+amend inner.i2c_core.u_i2c_*fifo.gen_normal_fifo.fifo_rptr
+amend inner.i2c_core.u_i2c_*fifo.gen_normal_fifo.fifo_wptr
+amend inner.i2c_core.u_i2c_*fifo.rvalid_o
 
 amend inner.i2c_core.u_i2c_fsm.load_tcount

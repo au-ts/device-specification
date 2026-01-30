@@ -16,7 +16,7 @@ i2cRegsScript.sml: ../util/gen_regs.py ../util/common.py
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
 		i2cRegsScript.sml
 
-i2cMappingsScript.sml: ../util/gen_mappings.py ../util/common.py i2cCoreTheory.uo
+i2cMappingsScript.sml: ../util/gen_mappings.py ../util/common.py i2cCoreTheory.uo i2cRegsCommTheory.uo
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_mappings \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
@@ -24,7 +24,7 @@ i2cMappingsScript.sml: ../util/gen_mappings.py ../util/common.py i2cCoreTheory.u
 
 i2cRegsCommScript.sml: ../util/gen_regs_comm.py ../util/common.py \
 	../common/cheshireMiscTheory.uo ../common/cheshireOracleTheory.uo \
-	i2cRegsTheory.uo i2cCoreTheory.uo i2cMappingsTheory.uo
+	i2cRegsTheory.uo
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_regs_comm \
 		"$(OPENTITAN_PERIPHERALS)/src/i2c/data/i2c.hjson" \
@@ -49,7 +49,6 @@ i2c.v: i2c_wrapper.sv
 		$(OPENTITAN_PERIPHERALS)/src/prim/rtl/prim_fifo_sync_cnt.sv \
 		$(OPENTITAN_PERIPHERALS)/src/prim/prim_pulp_platform/*.sv \
 		$(COMMON_CELLS)/src/sync.sv \
-		$(REGISTER_INTERFACE)/src/reg_intf.sv \
 		$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/src/*.sv \
 		i2c_wrapper.sv \
 		--write=i2c.v --top=i2c_circuit

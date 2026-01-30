@@ -15,7 +15,7 @@ spi_hostRegsScript.sml: ../util/gen_regs.py ../util/common.py
 		"$(OPENTITAN_PERIPHERALS)/src/spi_host/data/spi_host.hjson" \
 		spi_hostRegsScript.sml
 
-spi_hostMappingsScript.sml: ../util/gen_mappings.py ../util/common.py spi_hostCoreTheory.uo
+spi_hostMappingsScript.sml: ../util/gen_mappings.py ../util/common.py spi_hostCoreTheory.uo spi_hostRegsCommTheory.uo
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_mappings \
 		"$(OPENTITAN_PERIPHERALS)/src/spi_host/data/spi_host.hjson" \
@@ -23,7 +23,7 @@ spi_hostMappingsScript.sml: ../util/gen_mappings.py ../util/common.py spi_hostCo
 
 spi_hostRegsCommScript.sml: ../util/gen_regs_comm.py ../util/common.py \
 	../common/cheshireMiscTheory.uo ../common/cheshireOracleTheory.uo \
-	spi_hostRegsTheory.uo spi_hostCoreTheory.uo spi_hostMappingsTheory.uo
+	spi_hostRegsTheory.uo
 	PYTHONPATH="$(REGISTER_INTERFACE)/vendor/lowrisc_opentitan/util:..:$PYTHONPATH" \
 		python3 -m util.gen_regs_comm \
 		"$(OPENTITAN_PERIPHERALS)/src/spi_host/data/spi_host.hjson" \

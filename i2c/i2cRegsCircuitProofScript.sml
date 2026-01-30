@@ -2,7 +2,7 @@ open HolKernel Parse boolLib bossLib;
 open BasicProvers TypeBase combinSyntax wordsLib;
 open wordsTheory;
 open sumExtraTheory translatorTheory;
-open cheshireCircuitTheory cheshireMiscTheory cheshireOracleTheory i2cCircuitTheory i2cCircuitStateTheory i2cCoreTheory i2cMappingsTheory i2cRegsTheory i2cRegsCommTheory;
+open cheshireCircuitTheory cheshireMiscTheory cheshireOracleTheory i2cCircuitTheory i2cCoreTheory i2cMappingsTheory i2cPreCircuitProofTheory i2cRegsTheory i2cRegsCommTheory;
 
 val _ = new_theory "i2cRegsCircuitProof";
 
