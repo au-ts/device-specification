@@ -41,6 +41,8 @@ Definition core_sim_rel_def:
   core_sim_rel (machine : i2c_state) (circuit: i2c_circuit_state) =
   ( fifo_rel machine.rx_fifo circuit.rx_fifo_regfile circuit.rx_fifo.rptr circuit.rx_fifo.wptr
   ∧ fifo_rel machine.fmt_fifo circuit.fmt_fifo_regfile circuit.fmt_fifo.rptr circuit.fmt_fifo.wptr
+  ∧ circuit.tx_fifo.rptr = circuit.tx_fifo.wptr
+  ∧ circuit.acq_fifo.rptr = circuit.acq_fifo.wptr
   ∧ encode_fsm (machine.fsm_state) = circuit.fsm_state
   ∧ machine.counter = circuit.counter
   ∧ machine.pend_restart = circuit.pend_restart
@@ -61,22 +63,8 @@ Definition core_sim_rel_def:
 End
 
 Definition i2c_core_state_rel_def:
-
   (* mstate = model state, cstate = circuit state *)
-  i2c_core_state_rel (mstate: i2c_state) (cstate: i2c_circuit_state) <=>
-    i2c_hwext_read_rel mstate cstate.hw2reg /\
-    i2c_win_read_rel mstate cstate.win_buses /\
-    (* We shouldn't really be assuming this: it's true for I2C and SPI, but in
-     * general it should be perfectly fine for an access to take more than 1 cycle
-     * to complete.
-     *
-     * Right now, though, the structure of our model assumes that an access will
-     * never take more than one cycle, and I don't want to deal with fixing that
-     * just yet; besides, much of the work of fixing this would go towards Cheshire-
-     * specific code, when I don't think it's likely that we're going to find a
-     * Cheshire peripheral which doesn't respond immediately. *)
-    i2c_win_ready cstate.win_buses /\
-    core_sim_rel mstate cstate
+  i2c_core_state_rel (mstate: i2c_state) (cstate: i2c_circuit_state) <=> core_sim_rel mstate cstate
 End
 
 Definition i2c_state_rel_def:

@@ -387,6 +387,57 @@ Proof
   >> blastLib.BBLAST_TAC
 QED
 
+Theorem w2w_eq_w2w_iff_eq:
+  dimindex (:α) ≤ dimindex (:β) ⇒
+  ((w2w (v: α word): β word) = w2w w ⇔ v = w)
+Proof
+  rpt strip_tac
+  >> simp [SF WORD_BIT_EQ_ss]
+  >> iff_tac
+  >> rpt strip_tac
+  >> qpat_x_assum `∀i. _` $ qspec_then `i` assume_tac
+  >- rfs []
+  >- simp [Cong AND_CONG]
+QED
+
+Theorem length_fifo_eq_max:
+  fifo_rel ws (circuit : 6 word -> α) (rptr: 7 word) wptr ⇒
+  (LENGTH ws = 2 ** 6 ⇔ (word_bit 6 wptr ⇎ word_bit 6 rptr) ∧ ((5 >< 0) wptr: 6 word) = (5 >< 0) rptr)
+Proof
+  rpt strip_tac
+  >> drule_then assume_tac length_fifo
+  >> simp []
+  >> (IF_CASES_TAC >- simp [])
+  >> IF_CASES_TAC
+  >> simp []
+  >> rpt strip_tac
+  >> fs []
+  >> (Cases_on `ws` >- fs [])
+  >> fs [fifo_rel_def]
+  >- (qsuff_tac `-1w * ((5 >< 0) rptr: 7 word) + (5 >< 0) wptr <=+ (5 >< 0) wptr`
+      >- (`w2n ((5 >< 0) wptr: 7 word) < 2 ** (SUC 5 - 0)` by irule WORD_EXTRACT_LT
+          >> fs [WORD_LS, arithmeticTheory.NOT_LE])
+      >- (simp [WORD_ADD_LEFT_LS2]
+          >> qspecl_then [`6`, `5`, `6`, `0`, `6`, `wptr`] assume_tac $ Q.INST_TYPE [`:β` |-> `:7`] EXTRACT_JOIN_ADD
+          >> qspecl_then [`6`, `5`, `6`, `0`, `6`, `rptr`] assume_tac $ Q.INST_TYPE [`:β` |-> `:7`] EXTRACT_JOIN_ADD
+          >> `((6 >< 6) wptr: 7 word) = (6 >< 6) rptr` by fs [SF WORD_BIT_EQ_ss, word_bit_def]
+          >> fs [EXTRACT_ALL_BITS]
+          >> `((6 >< 6) rptr: 7 word) ≪ 6 + (5 >< 0) wptr >+ (6 >< 6) rptr ≪ 6 + (5 >< 0) rptr` by simp []
+          >> qpat_x_assum `((6 >< 6) rptr: 7 word) ≪ 6 + (5 >< 0) wptr = wptr` kall_tac
+          >> qpat_x_assum `((6 >< 6) rptr: 7 word) ≪ 6 + (5 >< 0) rptr = rptr` kall_tac
+          >> rfs [WORD_HI, word_add_def, word_mul_def, SF WORD_ARITH_EQ_ss]
+          >> `w2n ((6 >< 6) rptr: 7 word) < 2 ** (SUC 6 - 6)` by irule WORD_EXTRACT_LT
+          >> `w2n ((5 >< 0) rptr: 7 word) < 2 ** (SUC 5 - 0)` by irule WORD_EXTRACT_LT
+          >> `w2n ((5 >< 0) wptr: 7 word) < 2 ** (SUC 5 - 0)` by irule WORD_EXTRACT_LT
+          >> fs [WORD_LO]
+          >> `((5 >< 0) wptr: 7 word) ≠ 0w` suffices_by simp []
+          >> rpt strip_tac
+          >> fs []))
+  >- (`-1w * ((5 >< 0) rptr: 7 word) + (5 >< 0) wptr <> 0w` suffices_by fs [GSYM eq_n2w_iff_w2n_eq]
+      >> `∀(w: 7 word). ((5 >< 0) w: 7 word) = w2w ((5 >< 0) w: 6 word)` by (irule EXTEND_EXTRACT >> simp [])
+      >> asm_simp_tac std_ss [WORD_SUB_INTRO, WORD_MULT_CLAUSES, WORD_EQ_SUB_ZERO, w2w_eq_w2w_iff_eq, dimindex_6, dimindex_7])
+QED
+
 (* FIXME: generalise the bit-width *)        
 Theorem fifo_rel_append:
   ∀rptr. fifo_rel (xs ++ ys) (circuit: 6 word -> β) (rptr: 7 word) wptr ⇒
@@ -880,6 +931,10 @@ Theorem i2c_ffs_flat =
                                scl_rx_val_ff_def, sda_rx_val_ff_def, scl_i_q_ff_def, sda_i_q_ff_def,
                                i2c_core_under_rst_ff_def, i2c_core_rw_bit_ff_def, i2c_core_host_ack_ff_def])
           |> SRULE [i2c_reg_top_ff_flat];
+
+Theorem i2c_combs_flat' = LIST_CONJ $ map (fn (_, {accessor, ...}) =>
+    SCONV [i2c_combs_flat] ``^accessor (procs (i2c_reg_top_comb_1::(i2c_core_combs ++ [i2c_reg_top_comb_2])) fext s s')``
+  ) (fields_of ``:i2c_circuit_state``)
 
 Theorem core_sim_rel_combs:
   core_sim_rel mstate (procs (i2c_reg_top_comb_1::(i2c_core_combs ++ [i2c_reg_top_comb_2])) fext s s') ⇔ core_sim_rel mstate s'
@@ -1463,13 +1518,6 @@ Theorem i2c_tick_byte_index:
 Proof
   simp [i2c_tick_def]
 QED
-        
-Theorem mstate_with_fnums:
-  ((mstate with fnums := fnums).rx_fifo = mstate.rx_fifo)
-∧ ((mstate with fnums := fnums).fsm_state = mstate.fsm_state)
-Proof
-  simp []
-QED
 
 Theorem i2c_circuit_cstep:
   ?s. i2c_circuit fext fbits n = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext n) s s
@@ -1492,7 +1540,7 @@ Proof
   >> REVERSE IF_CASES_TAC
   >- ( simp [] )
   >> qpat_x_assum ‘cstate.rx_fifo.counter.rptr_wrap’ mp_tac
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >> rpt strip_tac
   >> qpat_x_assum ‘_ = 63w’ mp_tac
   >> IF_CASES_TAC
@@ -1514,7 +1562,7 @@ Proof
   >> REVERSE IF_CASES_TAC
   >- ( simp [] )
   >> qpat_x_assum ‘cstate.fmt_fifo.counter.rptr_wrap’ mp_tac
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >> rpt strip_tac
   >> qpat_x_assum ‘_ = 63w’ mp_tac
   >> IF_CASES_TAC
@@ -1536,7 +1584,7 @@ Proof
   >> REVERSE IF_CASES_TAC
   >- ( simp [] )
   >> qpat_x_assum ‘cstate.rx_fifo.counter.wptr_wrap’ mp_tac
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >> rpt strip_tac
   >> qpat_x_assum ‘_ = 63w’ mp_tac
   >> IF_CASES_TAC
@@ -1558,7 +1606,7 @@ Proof
   >> REVERSE IF_CASES_TAC
   >- ( simp [] )
   >> qpat_x_assum ‘cstate.fmt_fifo.counter.wptr_wrap’ mp_tac
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >> rpt strip_tac
   >> qpat_x_assum ‘_ = 63w’ mp_tac
   >> IF_CASES_TAC
@@ -1591,7 +1639,7 @@ Proof
       ∧ (i2c_circuit fext fbits n).pend_restart = s.pend_restart
       ∧ (i2c_circuit fext fbits n).trans_started = s.trans_started
       ∧ (i2c_circuit fext fbits n).under_rst = s.under_rst’ by (
-    asm_rewrite_tac [] >> simp [i2c_combs_flat])
+    asm_rewrite_tac [] >> simp [i2c_combs_flat'])
   >> fs [core_sim_rel_def]
 QED
         
@@ -1610,15 +1658,15 @@ Proof
   >> drule core_sim_rel_relates_seq_only
   >> ‘core_sim_rel mstate (i2c_circuit fext fbits n)’ by ( simp [Abbr ‘cstate’])
   >> disch_then drule
-  >> simp [Abbr ‘cstate’, i2c_combs_flat, encode_fsm_def]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat', encode_fsm_def]
 QED
 
 Theorem under_rst_iff_init:
   (i2c_circuit fext fbits n).under_rst <=> n = 0
 Proof
   Cases_on `n`
-  >- (simp [i2c_circuit_def, mk_module_def, mk_circuit_def, i2c_combs_flat] >> simp [i2c_circuit_init_def])
-  >- (simp [i2c_circuit_def, mk_module_def, mk_circuit_def, i2c_combs_flat] >> simp [i2c_ffs_flat])
+  >- (simp [i2c_circuit_def, mk_module_def, mk_circuit_def, i2c_combs_flat'] >> simp [i2c_circuit_init_def])
+  >- (simp [i2c_circuit_def, mk_module_def, mk_circuit_def, i2c_combs_flat'] >> simp [i2c_ffs_flat])
 QED
 
 Theorem not_under_rst_of_fsm_state_ne_init:
@@ -1627,7 +1675,7 @@ Proof
   simp [core_sim_rel_def, under_rst_iff_init]
   >> rpt strip_tac
   >> `(i2c_circuit fext fbits n).fsm_state = idle`
-     by (simp [i2c_circuit_def, mk_module_def, mk_circuit_def, i2c_combs_flat]
+     by (simp [i2c_circuit_def, mk_module_def, mk_circuit_def, i2c_combs_flat']
          >> simp [i2c_circuit_init_def])
   >> `(i2c_circuit fext fbits n).fsm_state ≠ idle`
      by (rpt strip_tac
@@ -1654,7 +1702,7 @@ Theorem incr_wptr_related:
 Proof
   LET_ELIM_TAC
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >> drule_all core_sim_rel_relates_seq_only
   >> drule_then (provehyp_then (K assume_tac)) not_under_rst_of_fsm_state_ne_init
   >- simp []
@@ -1664,7 +1712,7 @@ Proof
   >> qpat_x_assum ‘core_sim_rel _ _’ (ASSUME_TAC o CONJUNCT1 o REWRITE_RULE [core_sim_rel_def])
   >> pop_assum mp_tac
   >> asm_rewrite_tac []
-  >> simp [i2c_combs_flat]
+  >> simp [i2c_combs_flat']
   >> disch_tac                
   >> ASM_CASES_TAC “mstate.rx_fifo : word8 list = []”
   >- (
@@ -1689,7 +1737,7 @@ Theorem not_incr_wptr:
 Proof
   LET_ELIM_TAC
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >> drule_all core_sim_rel_relates_seq_only
   >> rpt $ disch_then STRIP_ASSUME_TAC
   >> ‘mstate.fsm_state = Receiving ReadHoldBit’ by (
@@ -1708,13 +1756,13 @@ Proof
   >> IF_CASES_TAC
   >- (
      ntac 2 $ pop_assum mp_tac
-     >> simp [i2c_combs_flat]
+     >> simp [i2c_combs_flat']
      >> rpt strip_tac
      >> first_x_assum drule
      >> metis_tac [])
   >> IF_CASES_TAC
   >- (
-     simp [i2c_combs_flat, SF WORD_ARITH_EQ_ss]
+     simp [i2c_combs_flat', SF WORD_ARITH_EQ_ss]
      >> ‘-1w * ((5 >< 0) s.rx_fifo.rptr : 7 word) + ((5 >< 0) s.rx_fifo.wptr: 7 word) =
          ((5 >< 0) s.rx_fifo.wptr: 7 word) - ((5 >< 0) s.rx_fifo.rptr : 7 word)’
          by ( simp [SF WORD_ARITH_EQ_ss])
@@ -1728,7 +1776,7 @@ Proof
          irule $ iffRL listTheory.NOT_NIL_EQ_LENGTH_NOT_0 >> decide_tac)
        >> dxrule $ iffLR listTheory.LIST_NOT_NIL
        >> disch_then (fn th => qpat_x_assum ‘fifo_rel _ _ _ _’ (assume_tac o ONCE_REWRITE_RULE [th]))          
-       >> gvs [fifo_rel_def, i2c_combs_flat]
+       >> gvs [fifo_rel_def, i2c_combs_flat']
        >> qpat_x_assum ‘_ >+ _’ mp_tac
        >> qpat_x_assum ‘word_bit _ _ ⇔ word_bit _ _’ mp_tac
        >> blastLib.BBLAST_TAC)
@@ -1791,7 +1839,7 @@ Proof
   >> qpat_x_assum ‘word_bit 6 (i2c_circuit fext fbits n).rx_fifo.wptr ⇎ word_bit 6 (i2c_circuit fext fbits n).rx_fifo.rptr’ (fn th =>
      ‘word_bit 6 (i2c_circuit fext fbits n).rx_fifo.rptr ⇎ word_bit 6 (i2c_circuit fext fbits n).rx_fifo.wptr’ by (simp [th]))
   >> first_x_assum drule                            
-  >> gvs [i2c_combs_flat]
+  >> gvs [i2c_combs_flat']
   >> qpat_x_assum ‘(_ >< _) _ ≠ _’mp_tac
   >> blastLib.BBLAST_TAC
 QED
@@ -1807,7 +1855,7 @@ Theorem fmt_not_incr_wptr:
 Proof
   LET_ELIM_TAC
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >- (
   qpat_x_assum ‘core_sim_rel _ _’ (STRIP_ASSUME_TAC o REWRITE_RULE [core_sim_rel_def])
   >> drule length_fifo_max
@@ -1818,13 +1866,13 @@ Proof
   >> IF_CASES_TAC
   >- (
      ntac 2 $ pop_assum mp_tac
-     >> simp [i2c_combs_flat]
+     >> simp [i2c_combs_flat']
      >> rpt strip_tac
      >> first_x_assum drule
      >> metis_tac [])
   >> IF_CASES_TAC
   >- (
-     simp [i2c_combs_flat, SF WORD_ARITH_EQ_ss]
+     simp [i2c_combs_flat', SF WORD_ARITH_EQ_ss]
      >> ‘-1w * ((5 >< 0) s.fmt_fifo.rptr : 7 word) + ((5 >< 0) s.fmt_fifo.wptr: 7 word) =
          ((5 >< 0) s.fmt_fifo.wptr: 7 word) - ((5 >< 0) s.fmt_fifo.rptr : 7 word)’
          by ( simp [SF WORD_ARITH_EQ_ss])
@@ -1838,7 +1886,7 @@ Proof
          irule $ iffRL listTheory.NOT_NIL_EQ_LENGTH_NOT_0 >> decide_tac)
        >> dxrule $ iffLR listTheory.LIST_NOT_NIL
        >> disch_then (fn th => qpat_x_assum ‘fifo_rel _ _ _ _’ (assume_tac o ONCE_REWRITE_RULE [th]))          
-       >> gvs [fifo_rel_def, i2c_combs_flat]
+       >> gvs [fifo_rel_def, i2c_combs_flat']
        >> qpat_x_assum ‘_ >+ _’ mp_tac
        >> qpat_x_assum ‘word_bit _ _ ⇔ word_bit _ _’ mp_tac
        >> blastLib.BBLAST_TAC)
@@ -1905,12 +1953,12 @@ Proof
   >> qpat_x_assum ‘word_bit 6 (i2c_circuit fext fbits n).fmt_fifo.wptr ⇎ word_bit 6 (i2c_circuit fext fbits n).fmt_fifo.rptr’ (fn th =>
      ‘word_bit 6 (i2c_circuit fext fbits n).fmt_fifo.rptr ⇎ word_bit 6 (i2c_circuit fext fbits n).fmt_fifo.wptr’ by (simp [th]))
   >> first_x_assum drule                            
-  >> gvs [i2c_combs_flat]
+  >> gvs [i2c_combs_flat']
   >> qpat_x_assum ‘(_ >< _) _ ≠ _’mp_tac
   >> blastLib.BBLAST_TAC
   )
   >> DISJ1_TAC
-  >> gvs [i2c_notif_rel_def, i2c_combs_flat]
+  >> gvs [i2c_notif_rel_def, i2c_combs_flat']
 QED
 
 Theorem not_under_rst_of_not_NULL_rx_fifo:
@@ -1919,7 +1967,7 @@ Proof
   simp [core_sim_rel_def, under_rst_iff_init]
   >> rpt strip_tac
   >> drule_all fifo_rel_not_null
-  >> simp [i2c_circuit_def, mk_module_def, mk_circuit_def, i2c_combs_flat]
+  >> simp [i2c_circuit_def, mk_module_def, mk_circuit_def, i2c_combs_flat']
   >> simp [i2c_circuit_init_def]
 QED
 
@@ -1936,7 +1984,7 @@ Theorem incr_ptr_related:
 Proof
   LET_ELIM_TAC
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >> drule_all_then assume_tac not_under_rst_of_not_NULL_rx_fifo
   >> ‘s.rx_fifo.rptr ≠ s.rx_fifo.wptr’ by (
     ‘mstate.rx_fifo ≠ []’ by (fs [rich_listTheory.NULL_EQ_NIL])
@@ -1946,7 +1994,7 @@ Proof
     >> pop_assum (assume_tac o CONJUNCT1 o REWRITE_RULE [core_sim_rel_def])
     >> qpat_x_assum ‘mstate.rx_fifo = _’ (fn th =>
          qpat_x_assum ‘fifo_rel _ _ _ _’ (assume_tac o ONCE_REWRITE_RULE [th]))
-    >> fs [fifo_rel_def, i2c_combs_flat]
+    >> fs [fifo_rel_def, i2c_combs_flat']
     >> qpat_x_assum ‘_ ⇒ _ >+ _’ mp_tac
     >> qpat_x_assum ‘_ ⇒ _ <=+ _’ mp_tac
     >> blastLib.BBLAST_TAC)
@@ -1965,20 +2013,20 @@ Theorem fmt_incr_rptr_related:
 Proof
   LET_ELIM_TAC
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >> drule_all_then assume_tac core_sim_rel_relates_seq_only
   >> drule_then (provehyp_then (K assume_tac)) not_under_rst_of_fsm_state_ne_init
   >- simp []
   >> ‘s.fsm_state = 2w’ by (
     qpat_x_assum ‘core_sim_rel _ _’ (STRIP_ASSUME_TAC o REWRITE_RULE [core_sim_rel_def])
-    >> gvs [i2c_combs_flat, encode_fsm_def])
+    >> gvs [i2c_combs_flat', encode_fsm_def])
   >> ‘s.fmt_fifo.rptr ≠ s.fmt_fifo.wptr’ suffices_by ( fs [] )
   >> ‘mstate.fmt_fifo = HD mstate.fmt_fifo :: TL mstate.fmt_fifo’ by (
     metis_tac [listTheory.LIST_NOT_NIL, rich_listTheory.NULL_EQ_NIL])
   >> qpat_x_assum ‘core_sim_rel _ _’ (STRIP_ASSUME_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
   >> pop_assum mp_tac
   >> once_asm_rewrite_tac []
-  >> simp [i2c_combs_flat, fifo_rel_def]
+  >> simp [i2c_combs_flat', fifo_rel_def]
   >> disch_then STRIP_ASSUME_TAC
   >> ASM_CASES_TAC “(word_bit 6 s.fmt_fifo.rptr ⇔ word_bit 6 s.fmt_fifo.wptr)”
   >> first_x_assum drule
@@ -1996,7 +2044,7 @@ Proof
   >> `mstate.under_rst <=> (i2c_circuit fext fbits n).under_rst` by fs [core_sim_rel_def]
   >> qpat_x_assum `core_sim_rel _ _` kall_tac
   >> gs [i2c_notif_rel_def, under_rst_iff_init]
-  >> fs [i2c_circuit_def, mk_module_def, mk_circuit_def, i2c_combs_flat]
+  >> fs [i2c_circuit_def, mk_module_def, mk_circuit_def, i2c_combs_flat']
   >> fs [i2c_circuit_init_def]
   >> Cases_on `mstate.buffered_notif`
   >- fs []
@@ -2016,32 +2064,32 @@ Theorem fmt_incr_wptr_related:
 Proof
   LET_ELIM_TAC
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >> drule_all_then assume_tac core_sim_rel_relates_seq_only
   >> drule_then (drule_then (provehyp_then (K assume_tac))) not_under_rst_of_buffered_notif_ne_NONE
   >- simp []
   >> ‘s.reg2hw.fdata.fbyte_qe ∧ s.reg2hw.fdata.start_qe ∧
       s.reg2hw.fdata.stop_qe ∧ s.reg2hw.fdata.read_qe ∧
       s.reg2hw.fdata.rcont_qe ∧ s.reg2hw.fdata.nakok_qe’ by (
-    gvs [i2c_combs_flat, i2c_notif_rel_def])
+    gvs [i2c_combs_flat', i2c_notif_rel_def])
   >> ‘((5 >< 0) s.fmt_fifo.wptr : 6 word) = ((5 >< 0) s.fmt_fifo.rptr: 6 word) ⇒
        (word_bit 6 s.fmt_fifo.wptr ⇔ word_bit 6 s.fmt_fifo.rptr)’
     suffices_by (fs [])
   >> ASM_CASES_TAC “mstate.fmt_fifo = []”                      
   >- (
   qpat_x_assum ‘core_sim_rel _ _’ (ASSUME_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
-  >> gvs [fifo_rel_def, i2c_combs_flat]
+  >> gvs [fifo_rel_def, i2c_combs_flat']
   )
   >> qpat_x_assum ‘core_sim_rel _ _’ (ASSUME_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
   >> ‘mstate.fmt_fifo = HD mstate.fmt_fifo :: TL mstate.fmt_fifo’ by ( metis_tac [listTheory.LIST_NOT_NIL])
   >> qpat_assum ‘fifo_rel _ _ _ _ ’ mp_tac
   >> qpat_x_assum ‘mstate.fmt_fifo = _’ (fn th => once_rewrite_tac [th])
-  >> simp [fifo_rel_def, i2c_combs_flat]
+  >> simp [fifo_rel_def, i2c_combs_flat']
   >> disch_then STRIP_ASSUME_TAC
   >> disch_tac
   >> spose_not_then (ASSUME_TAC o GSYM)
   >> rev_drule length_fifo
-  >> simp [i2c_combs_flat]        
+  >> simp [i2c_combs_flat']
 QED
 
 Theorem no_incr_rptr:
@@ -2062,7 +2110,7 @@ Proof
         fs [core_sim_rel_def, fifo_rel_def])
       , ALL_TAC]
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> fs [Abbr ‘cstate’, i2c_combs_flat, i2c_hwext_notif_rel_def]
+  >> fs [Abbr ‘cstate’, i2c_combs_flat', i2c_hwext_notif_rel_def]
 QED
 
 Theorem fmt_no_incr_rptr:
@@ -2074,15 +2122,15 @@ Theorem fmt_no_incr_rptr:
 Proof
   LET_ELIM_TAC
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >- (
   ‘mstate.fmt_fifo = []’ by ( fs [rich_listTheory.NULL_EQ_NIL])
   >> qpat_x_assum ‘core_sim_rel _ _’ (ASSUME_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
-  >> gvs [fifo_rel_def, i2c_combs_flat]
+  >> gvs [fifo_rel_def, i2c_combs_flat']
   )
   >> disch_tac
   >> qpat_x_assum ‘core_sim_rel _ _’ (STRIP_ASSUME_TAC o REWRITE_RULE [core_sim_rel_def])
-  >> ‘encode_fsm mstate.fsm_state = s.fsm_state’ by ( fs [i2c_combs_flat])
+  >> ‘encode_fsm mstate.fsm_state = s.fsm_state’ by ( fs [i2c_combs_flat'])
   >> Cases_on ‘mstate.fsm_state’
   >> TRY $ Cases_on ‘t’
   >> TRY $ Cases_on ‘r’
@@ -2102,16 +2150,16 @@ Proof
   LET_ELIM_TAC
   >> CHOOSE_TAC i2c_circuit_cstep
   >> ‘cstate.rx_fifo.reset ⇔ word_bit 0 s.regs.fifo_ctrl.rxrst ∧ s.reg2hw.fifo_ctrl.rxrst_qe’ by (
-    simp [Abbr ‘cstate’, i2c_combs_flat])
+    simp [Abbr ‘cstate’, i2c_combs_flat'])
   >> pop_assum (fn th => REWRITE_TAC [th])
   >> ‘(mstate.buffered_notif = SOME fifo_ctrl_write ⇔ s.reg2hw.fifo_ctrl.rxrst_qe )
       ∧ ((mstate.regs.fifo_ctrl.rxrst = 1w) ⇔ word_bit 0 s.regs.fifo_ctrl.rxrst )’ suffices_by (metis_tac [])
   >> conj_tac
   >- (
-     ‘cstate.reg2hw.fifo_ctrl.rxrst_qe = s.reg2hw.fifo_ctrl.rxrst_qe’ by (simp [Abbr ‘cstate’, i2c_combs_flat])
+     ‘cstate.reg2hw.fifo_ctrl.rxrst_qe = s.reg2hw.fifo_ctrl.rxrst_qe’ by (simp [Abbr ‘cstate’, i2c_combs_flat'])
      >> qpat_x_assum ‘i2c_notif_rel _ _’ (ASSUME_TAC o REWRITE_RULE [i2cRegsCommTheory.i2c_notif_rel_def])
      >> fs [])
-  >> ‘cstate.regs.fifo_ctrl.rxrst = s.regs.fifo_ctrl.rxrst’ by (simp [Abbr ‘cstate’, i2c_combs_flat])
+  >> ‘cstate.regs.fifo_ctrl.rxrst = s.regs.fifo_ctrl.rxrst’ by (simp [Abbr ‘cstate’, i2c_combs_flat'])
   >> simp [SF WORD_EXTRACT_ss]       
 QED
 
@@ -2127,10 +2175,10 @@ Proof
   LET_ELIM_TAC
   >> CHOOSE_TAC i2c_circuit_cstep
   >> ‘cstate.fmt_fifo.reset ⇔ cstate.regs.fifo_ctrl.fmtrst = 1w ∧ s.reg2hw.fifo_ctrl.fmtrst_qe’ by (
-    simp [Abbr ‘cstate’, i2c_combs_flat, SF WORD_EXTRACT_ss])
+    simp [Abbr ‘cstate’, i2c_combs_flat', SF WORD_EXTRACT_ss])
   >> pop_assum (fn th => REWRITE_TAC [th])
   >> ‘(mstate.buffered_notif = SOME fifo_ctrl_write ⇔ s.reg2hw.fifo_ctrl.fmtrst_qe)’ suffices_by (metis_tac [])
-  >> ‘cstate.reg2hw.fifo_ctrl.fmtrst_qe = s.reg2hw.fifo_ctrl.fmtrst_qe’ by (simp [Abbr ‘cstate’, i2c_combs_flat])
+  >> ‘cstate.reg2hw.fifo_ctrl.fmtrst_qe = s.reg2hw.fifo_ctrl.fmtrst_qe’ by (simp [Abbr ‘cstate’, i2c_combs_flat'])
   >> qpat_x_assum ‘i2c_notif_rel _ _’ (ASSUME_TAC o REWRITE_RULE [i2cRegsCommTheory.i2c_notif_rel_def])
   >> fs []
 QED
@@ -2147,9 +2195,9 @@ Theorem read_byte_related:
 Proof
   LET_ELIM_TAC
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [Abbr ‘cstate’, i2c_combs_flat]
+  >> simp [Abbr ‘cstate’, i2c_combs_flat']
   >> drule_all core_sim_rel_relates_seq_only
-  >> fs [core_sim_rel_def, encode_fsm_def, i2c_combs_flat]  
+  >> fs [core_sim_rel_def, encode_fsm_def, i2c_combs_flat']
 QED
 
 Theorem fifo_rel_wptr_updated:
@@ -2251,6 +2299,27 @@ Proof
   >> fs []
 QED
 
+Theorem not_txdata_write_of_ISR_i2c_tick:
+  ISR (i2c_tick notif st) ==> st.buffered_notif ≠ SOME txdata_write
+Proof
+  simp [i2c_tick_def]
+  >> IF_CASES_TAC
+  >> fs []
+QED
+
+Theorem no_target_of_i2c_tick_INR:
+  i2c_tick notif (mstate with fnums := fnums) = INR mstate'
+  ∧ core_sim_rel mstate cstate
+  ∧ i2c_notif_rel mstate.buffered_notif cstate.reg2hw
+  ==> cstate.regs.ctrl.enabletarget = 0w ∧ ¬cstate.reg2hw.txdata.txdata_qe
+Proof
+  strip_tac
+  >> drule_then assume_tac INR_imp_ISR
+  >> drule_then assume_tac not_ctrl_enabletarget_of_ISR_i2c_tick
+  >> drule_then assume_tac not_txdata_write_of_ISR_i2c_tick
+  >> rfs [core_sim_rel_def, i2c_notif_rel_def]
+QED
+
 Theorem i2c_core_circuit_simulate_encode_fsm:
   let
     cstate = i2c_circuit fext fbits n;
@@ -2269,7 +2338,7 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘encode_fsm (st_upd mstate').fsm_state = cstate1_seq.fsm_state’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
@@ -2296,7 +2365,7 @@ Proof
     THEN rpt strip_tac
     THEN drule fifo_rel_null
     THEN rw [])
-  >> simp [i2c_combs_flat, encode_fsm_def])
+  >> simp [i2c_combs_flat', encode_fsm_def])
   >~ [‘Active’]
   >- (
   ‘s.fsm_state = active’ by (
@@ -2312,7 +2381,7 @@ Proof
   >> ASM_CASES_TAC “NULL mstate.fmt_fifo”
   >- (
     qpat_x_assum ‘i2c_circuit fext fbits n = _’ (fn th => REWRITE_TAC [th])
-    >> fs [i2c_combs_flat, encode_fsm_def])
+    >> fs [i2c_combs_flat', encode_fsm_def])
   >> ‘HD mstate.fmt_fifo = s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr :word6)’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
     THEN simp [core_sim_rel_combs]
@@ -2326,7 +2395,7 @@ Proof
     THEN simp [core_sim_rel_combs]
     THEN rw [core_sim_rel_def] )
   >> qpat_assum ‘i2c_circuit fext fbits n = _’ (fn th => REWRITE_TAC [th])
-  >> simp [i2c_combs_flat]
+  >> simp [i2c_combs_flat']
   >> fs [encode_fsm_def] )
   >~ [‘Transmitting’]
   >- (
@@ -2342,7 +2411,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> fs [encode_fsm_def, wordsTheory.WORD_HIGHER])
   >- (
     ‘s.fsm_state = clockPulse’ by (
@@ -2354,7 +2423,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = holdBit’ by (
@@ -2368,7 +2437,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = clockLowAck’ by (
@@ -2382,7 +2451,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = clockPulseAck’ by (
@@ -2396,7 +2465,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = holdDevAck’ by (
@@ -2419,7 +2488,7 @@ Proof
       THEN DISCH_THEN ACCEPT_TAC)
     >> ASM_CASES_TAC “NULL mstate.fmt_fifo”
     >- (
-      simp [i2c_combs_flat]
+      simp [i2c_combs_flat']
       >> fs [encode_fsm_def, wordsTheory.WORD_HIGHER])
     >> ‘HD mstate.fmt_fifo = s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr :word6)’ by (
       qpat_x_assum ‘core_sim_rel _ _’ mp_tac
@@ -2429,7 +2498,7 @@ Proof
       THEN drule fifo_rel_not_null_HD
       THEN disch_then drule
       THEN EVAL_TAC )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
   >~ [‘Receiving’]
   >- (
@@ -2445,7 +2514,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = readClockPulse’ by (
@@ -2457,7 +2526,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = readHoldBit’ by (
@@ -2469,7 +2538,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = hostClockLowAck’ by (
@@ -2481,7 +2550,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = hostClockPulseAck’ by (
@@ -2493,7 +2562,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = hostHoldBitAck’ by (
@@ -2515,7 +2584,7 @@ Proof
       THEN drule fifo_rel_null
       THEN DISCH_THEN ACCEPT_TAC)
     >> ASM_CASES_TAC “NULL mstate.fmt_fifo”
-    >- (simp [i2c_combs_flat] >> fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
+    >- (simp [i2c_combs_flat'] >> fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
     >> ‘HD mstate.fmt_fifo = s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr :word6)’ by (
       qpat_x_assum ‘core_sim_rel _ _’ mp_tac
       THEN simp [core_sim_rel_combs]
@@ -2524,7 +2593,7 @@ Proof
       THEN drule fifo_rel_not_null_HD
       THEN disch_then drule
       THEN EVAL_TAC )
-    >> simp [i2c_combs_flat]                                                                                                
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
   >~ [‘Starting’]  
   >- (
@@ -2540,7 +2609,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = holdStart’ by (
@@ -2552,7 +2621,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = clockStart’ by (
@@ -2564,7 +2633,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
   >~ [‘Stopping’]
   >- (
@@ -2580,7 +2649,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = setupStop’ by (
@@ -2592,7 +2661,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] )
   >- (
     ‘s.fsm_state = holdStop’ by (
@@ -2605,7 +2674,7 @@ Proof
       THEN rewrite_tac [core_sim_rel_def]
       THEN rpt strip_tac
       THEN rw [] )
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >>  fs [encode_fsm_def, wordsTheory.WORD_HIGHER] ) )
   >~ [‘PopFmtFifo’]
   >- (
@@ -2635,7 +2704,7 @@ Proof
     THEN DISCH_THEN ACCEPT_TAC)
   >> drule length_fifo
   >> disch_then (fn th => REWRITE_TAC [th])
-  >> simp [i2c_combs_flat]
+  >> simp [i2c_combs_flat']
   >> fs [encode_fsm_def, wordsTheory.WORD_HIGHER]                           
   >> ‘dimindex(:6) = (5:num) + (1:num) - (0:num)’ by EVAL_TAC
                                                      
@@ -2674,7 +2743,7 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘fifo_rel (st_upd mstate').rx_fifo cstate1_seq.rx_fifo_regfile cstate1_seq.rx_fifo.rptr cstate1_seq.rx_fifo.wptr’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
@@ -2689,12 +2758,12 @@ Proof
     >> CHOOSE_TAC i2c_circuit_cstep
     >> ‘word_bit 0 s.regs.fifo_ctrl.rxrst’ by (
       qpat_x_assum ‘(i2c_circuit fext fbits n).regs.fifo_ctrl.rxrst = 1w’ mp_tac
-      THEN simp [i2c_combs_flat])
+      THEN simp [i2c_combs_flat'])
     >> ‘s.reg2hw.fifo_ctrl.rxrst_qe’ by (
       qpat_x_assum ‘i2c_notif_rel _ _’ mp_tac
-      THEN simp [i2c_notif_rel_def, i2c_combs_flat])
+      THEN simp [i2c_notif_rel_def, i2c_combs_flat'])
     >> qpat_assum ‘i2c_circuit_step fext fbit n = _’ (fn th => REWRITE_TAC [th])
-    >> simp [i2c_combs_flat])
+    >> simp [i2c_combs_flat'])
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, fifo_rel_def])
   >- (
   rpt $ qpat_x_assum ‘_ ∧ _’ strip_assume_tac
@@ -2777,13 +2846,13 @@ Proof
     >> fs [])
   >> ‘¬ cstate.rx_fifo.counter.rptr_wrap’ by (
     simp [Abbr ‘cstate’, Abbr ‘req_c’]
-    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat] >> assume_tac th) i2c_circuit_cstep
+    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat'] >> assume_tac th) i2c_circuit_cstep
     >> ‘notif ≠ SOME (Read rdata_read) ∨ NULL mstate.rx_fifo’ by (fs [])
     >- ( fs [i2c_hwext_notif_rel_def] )                                
     >> ‘mstate.rx_fifo = []’ by ( fs [rich_listTheory.NULL_EQ_NIL])
     >> ‘s.rx_fifo.rptr = s.rx_fifo.wptr’  by (
       qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-      >> simp [core_sim_rel_def, fifo_rel_def, i2c_combs_flat])
+      >> simp [core_sim_rel_def, fifo_rel_def, i2c_combs_flat'])
     >> simp [])
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat ]
   >> ‘i2c_circuit fext fbits n = cstate’ by (simp [Abbr ‘cstate’])
@@ -2834,7 +2903,7 @@ Proof
   >> ‘¬ cstate.rx_fifo.counter.wptr_wrap’ by (
     qpat_x_assum ‘¬ cstate.rx_fifo.incr_wptr’ mp_tac
     >> simp [Abbr ‘cstate’, Abbr ‘req_c’]
-    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat] >> assume_tac th) i2c_circuit_cstep
+    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat'] >> assume_tac th) i2c_circuit_cstep
     >> metis_tac [])
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat ]
   >> ‘fifo_rel (TL mstate.rx_fifo) cstate.rx_fifo_regfile (cstate.rx_fifo.rptr + 1w) cstate.rx_fifo.wptr’ suffices_by (simp [Abbr ‘cstate’, SRULE [SF boolSimps.LET_ss] incr_ptr_simplified])
@@ -2869,17 +2938,17 @@ Proof
   >> ‘¬ cstate.rx_fifo.counter.wptr_wrap’ by (
     qpat_x_assum ‘¬ cstate.rx_fifo.incr_wptr’ mp_tac
     >> simp [Abbr ‘cstate’, Abbr ‘req_c’]
-    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat] >> assume_tac th) i2c_circuit_cstep
+    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat'] >> assume_tac th) i2c_circuit_cstep
     >> metis_tac [])
   >> ‘¬ cstate.rx_fifo.counter.rptr_wrap’ by (
     simp [Abbr ‘cstate’, Abbr ‘req_c’]
-    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat] >> assume_tac th) i2c_circuit_cstep
+    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat'] >> assume_tac th) i2c_circuit_cstep
     >> ‘notif ≠ SOME (Read rdata_read) ∨ NULL mstate.rx_fifo’ by (fs [])
     >- ( fs [i2c_hwext_notif_rel_def] )                                
     >> ‘mstate.rx_fifo = []’ by ( fs [rich_listTheory.NULL_EQ_NIL])
     >> ‘s.rx_fifo.rptr = s.rx_fifo.wptr’  by (
       qpat_x_assum ‘core_sim_rel _ _’ mp_tac 
-      >> simp [core_sim_rel_def, fifo_rel_def, i2c_combs_flat])
+      >> simp [core_sim_rel_def, fifo_rel_def, i2c_combs_flat'])
     >> simp [])
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat ]
   >> fs [core_sim_rel_def])
@@ -2904,7 +2973,7 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘fifo_rel (st_upd mstate').fmt_fifo cstate1_seq.fmt_fifo_regfile cstate1_seq.fmt_fifo.rptr cstate1_seq.fmt_fifo.wptr’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
@@ -2918,12 +2987,12 @@ Proof
     >> CHOOSE_TAC i2c_circuit_cstep
     >> ‘s.regs.fifo_ctrl.fmtrst = 1w’ by (
       qpat_x_assum ‘(i2c_circuit fext fbits n).regs.fifo_ctrl.fmtrst = 1w’ mp_tac
-      THEN simp [i2c_combs_flat])
+      THEN simp [i2c_combs_flat'])
     >> ‘s.reg2hw.fifo_ctrl.fmtrst_qe’ by (
       qpat_x_assum ‘i2c_notif_rel _ _’ mp_tac
-      THEN simp [i2c_notif_rel_def, i2c_combs_flat])
+      THEN simp [i2c_notif_rel_def, i2c_combs_flat'])
     >> qpat_assum ‘i2c_circuit_step fext fbit n = _’ (fn th => REWRITE_TAC [th])
-    >> simp [i2c_combs_flat])
+    >> simp [i2c_combs_flat'])
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, fifo_rel_def])
   >- (
   rpt $ qpat_x_assum ‘_ ∧ _’ strip_assume_tac
@@ -2987,7 +3056,7 @@ Proof
                                    w2w cstate.regs.fdata.stop ≪ 9)’ by (
     simp [Abbr ‘cstate’]
     >> CHOOSE_TAC i2c_circuit_cstep
-    >> simp [i2c_combs_flat])
+    >> simp [i2c_combs_flat'])
   >> simp [fifo_rel_def]
   >> blastLib.BBLAST_TAC)           
   >- (
@@ -3011,7 +3080,7 @@ Proof
   >> ‘¬ cstate.fmt_fifo.counter.rptr_wrap’ by (
     qpat_x_assum ‘¬ cstate.fmt_fifo.incr_rptr’ mp_tac
     >> simp [Abbr ‘cstate’]
-    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat] >> assume_tac th) i2c_circuit_cstep
+    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat'] >> assume_tac th) i2c_circuit_cstep
     )
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat ]
   >> ‘i2c_circuit fext fbits n = cstate’ by (simp [Abbr ‘cstate’])
@@ -3050,7 +3119,7 @@ Proof
                                    w2w cstate.regs.fdata.stop ≪ 9)’ by (
     simp [Abbr ‘cstate’]
     >> CHOOSE_TAC i2c_circuit_cstep
-    >> simp [i2c_combs_flat])
+    >> simp [i2c_combs_flat'])
   >> simp [fifo_rel_def]
   >> blastLib.BBLAST_TAC )
   >- (
@@ -3075,7 +3144,7 @@ Proof
   >> ‘¬ cstate.fmt_fifo.counter.wptr_wrap’ by (
     qpat_x_assum ‘¬ cstate.fmt_fifo.incr_wptr’ mp_tac
     >> simp [Abbr ‘cstate’, Abbr ‘req_c’]
-    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat] >> assume_tac th) i2c_circuit_cstep
+    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat'] >> assume_tac th) i2c_circuit_cstep
     >> metis_tac [])
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat ]
   >> ‘fifo_rel (TL mstate.fmt_fifo) cstate.fmt_fifo_regfile (cstate.fmt_fifo.rptr + 1w) cstate.fmt_fifo.wptr’
@@ -3107,14 +3176,86 @@ Proof
   >> ‘¬ cstate.fmt_fifo.counter.wptr_wrap’ by (
     qpat_x_assum ‘¬ cstate.fmt_fifo.incr_wptr’ mp_tac
     >> simp [Abbr ‘cstate’, Abbr ‘req_c’]
-    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat] >> assume_tac th) i2c_circuit_cstep
+    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat'] >> assume_tac th) i2c_circuit_cstep
     >> metis_tac [])
   >> ‘¬ cstate.fmt_fifo.counter.rptr_wrap’ by (
     qpat_x_assum ‘¬ cstate.fmt_fifo.incr_rptr’ mp_tac
     >> simp [Abbr ‘cstate’]
-    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat] >> assume_tac th) i2c_circuit_cstep)
+    >> qx_choose_then ‘s’ (fn th => simp [th, i2c_combs_flat'] >> assume_tac th) i2c_circuit_cstep)
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat ]
   >> fs [core_sim_rel_def])
+QED
+
+Theorem core_sim_rel_alt:
+  core_sim_rel (machine : i2c_state) (circuit: i2c_circuit_state) =
+  ( fifo_rel machine.rx_fifo circuit.rx_fifo_regfile circuit.rx_fifo.rptr circuit.rx_fifo.wptr
+  ∧ fifo_rel machine.fmt_fifo circuit.fmt_fifo_regfile circuit.fmt_fifo.rptr circuit.fmt_fifo.wptr
+  ∧ circuit.tx_fifo.rptr = circuit.tx_fifo.wptr
+  ∧ circuit.acq_fifo.rptr = circuit.acq_fifo.wptr
+  ∧ (∀fsm_state. machine.fsm_state = fsm_state ⇔ circuit.fsm_state = encode_fsm fsm_state)
+  ∧ machine.counter = circuit.counter
+  ∧ machine.pend_restart = circuit.pend_restart
+  ∧ machine.trans_started = circuit.trans_started
+  ∧ machine.bit_index = circuit.bit_index
+  ∧ machine.stretch_idle_cnt = circuit.stretch_idle_cnt
+  ∧ machine.byte_index = circuit.byte_index
+  ∧ machine.read_byte = circuit.read_byte
+  ∧ machine.scl_rx_val = circuit.scl_rx_val
+  ∧ machine.sda_rx_val = circuit.sda_rx_val
+  ∧ machine.regs = circuit.regs
+  ∧ machine.under_rst = circuit.under_rst
+  ∧ machine.scl_buf = circuit.scl_buf
+  ∧ machine.sda_buf = circuit.sda_buf
+  ∧ machine.scl_sync = circuit.scl_sync
+  ∧ machine.sda_sync = circuit.sda_sync
+  )
+Proof
+  simp [core_sim_rel_def]
+  >> `encode_fsm machine.fsm_state = circuit.fsm_state ⇔
+      (∀fsm_state. machine.fsm_state = fsm_state ⇔ circuit.fsm_state = encode_fsm fsm_state)`
+  suffices_by simp []
+  >> iff_tac
+  >> rpt strip_tac
+  >- (iff_tac
+      >> rpt strip_tac
+      >- fs []
+      >- (fs []
+          >> drule_then irule encode_fsm_injective))
+  >> first_x_assum $ qspec_then `machine.fsm_state` assume_tac
+  >> fs []
+QED
+
+Theorem i2c_notif_rel_i2c_combs:
+  i2c_notif_rel mstate.buffered_notif (procs (i2c_reg_top_comb_1::(i2c_core_combs ++ [i2c_reg_top_comb_2])) fext s s').reg2hw
+  <=> i2c_notif_rel mstate.buffered_notif s'.reg2hw
+Proof
+  simp [i2c_notif_rel_def, i2c_combs_flat']
+QED
+
+Theorem i2c_core_circuit_simulate_fifo_tx:
+  let
+    cstate = i2c_circuit fext fbits n;
+    cstate' = i2c_circuit fext fbits (SUC n);
+    req_c = reg_req_decode (fext n).reg_req_i: 7 reg_req;
+  in
+  i2c_state_rel mstate cstate
+  ∧ cheshire_req_rel req_m req_c
+  ∧ cheshire_req i2c_read i2c_write mstate req_m = INR (st_upd, notif, rdata)
+  ∧ i2c_tick notif (mstate with fnums := fnum_witness' cstate (fext n)) = INR mstate'
+  ∧ i2c_hwext_notif_rel notif req_c
+  ⇒ cstate'.tx_fifo.rptr = cstate'.tx_fifo.wptr
+Proof
+  LET_ELIM_TAC
+  >> qabbrev_tac ‘cstate1_seq = procs (i2c_core_ffs1 ++ [i2c_reg_top_ff]) (fext n) cstate cstate’
+  >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
+    by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
+  >> simp [i2c_combs_flat']
+  >> simp [Abbr `cstate1_seq`, i2c_ffs_flat, Abbr `cstate`]
+  >> CHOOSE_TAC i2c_circuit_cstep
+  >> simp [i2c_combs_flat']
+  >> fs [i2c_state_rel_def, i2c_core_state_rel_def, core_sim_rel_combs, i2c_notif_rel_i2c_combs]
+  >> drule_all_then strip_assume_tac no_target_of_i2c_tick_INR
+  >> fs [core_sim_rel_alt]
 QED
 
 Theorem encode_fsm_ls_hostHoldBitAck:
@@ -3132,6 +3273,34 @@ Proof
   >> fs [core_sim_rel_def]
   >> qpat_x_assum `encode_fsm _ = _` (assume_tac o GSYM)
   >> simp [encode_fsm_ls_hostHoldBitAck]
+QED
+
+Theorem i2c_core_circuit_simulate_fifo_acq:
+  let
+    cstate = i2c_circuit fext fbits n;
+    cstate' = i2c_circuit fext fbits (SUC n);
+    req_c = reg_req_decode (fext n).reg_req_i: 7 reg_req;
+  in
+  i2c_state_rel mstate cstate
+  ∧ cheshire_req_rel req_m req_c
+  ∧ cheshire_req i2c_read i2c_write mstate req_m = INR (st_upd, notif, rdata)
+  ∧ i2c_tick notif (mstate with fnums := fnum_witness' cstate (fext n)) = INR mstate'
+  ∧ i2c_hwext_notif_rel notif req_c
+  ⇒ cstate'.acq_fifo.rptr = cstate'.acq_fifo.wptr
+Proof
+  LET_ELIM_TAC
+  >> qabbrev_tac ‘cstate1_seq = procs (i2c_core_ffs1 ++ [i2c_reg_top_ff]) (fext n) cstate cstate’
+  >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
+    by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
+  >> simp [i2c_combs_flat']
+  >> simp [Abbr `cstate1_seq`, i2c_ffs_flat, Abbr `cstate`]
+  >> CHOOSE_TAC i2c_circuit_cstep
+  >> simp [i2c_combs_flat']
+  >> fs [i2c_state_rel_def, i2c_core_state_rel_def, core_sim_rel_combs, i2c_notif_rel_i2c_combs]
+  >> drule_all_then strip_assume_tac no_target_of_i2c_tick_INR
+  >> drule_then assume_tac ls_hostHoldBitAck_of_core_sim_rel
+  >> fs [core_sim_rel_alt]
+  >> fs [eq_n2w_iff_w2n_eq, WORD_LS, Excl "w2n_eq_0"]
 QED
 
 Theorem i2c_core_circuit_simulate_counter:
@@ -3152,7 +3321,7 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').counter = cstate1_seq.counter’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
@@ -3171,31 +3340,31 @@ Proof
      by (qpat_assum `i2c_tick _ _ = INR _` (fn thm => assume_tac $
            MATCH_MP not_ctrl_enabletarget_of_ISR_i2c_tick (MATCH_MP INR_imp_ISR thm))
          >> rfs [])
-  >> simp [i2c_combs_flat]
+  >> simp [i2c_combs_flat']
   >> drule encode_fsm_circuit                
   >> disch_then (fn th => qpat_assum ‘i2c_circuit fext fbits n = _ ’ (fn th2 =>
-    ASSUME_TAC $ SRULE [th2, i2c_combs_flat] th))
+    ASSUME_TAC $ SRULE [th2, i2c_combs_flat'] th))
   >> pop_assum (fn th => REWRITE_TAC [th, encode_fsm_def, fsmState_case_def])
   >> ‘mstate.counter = s.counter’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def,i2c_combs_flat])
+    >> simp [core_sim_rel_def,i2c_combs_flat'])
   >> pop_assum (fn th => REWRITE_TAC [th])
   >> `!w. 20w <+ w ==> s.fsm_state <> w`
      by (drule ls_hostHoldBitAck_of_core_sim_rel
-         >> simp [i2c_combs_flat, WORD_NOT_LOWER])
+         >> simp [i2c_combs_flat', WORD_NOT_LOWER])
   >> simp []
   >> `(3w ≤₊ s.fsm_state ∧ s.fsm_state ≤₊ 20w ∧ s.counter = 1w ∨ s.fsm_state = 1w ∨ s.fsm_state = 2w)
       <=> (s.fsm_state ≠ 0w ∧ s.counter = 1w ∨ s.fsm_state = 1w ∨ s.fsm_state = 2w)`
      by (`3w ≤₊ s.fsm_state <=> s.fsm_state ≠ 0w ∧ s.fsm_state ≠ 1w ∧ s.fsm_state ≠ 2w`
          by simp [GSYM WORD_NOT_LOWER, WORD_LO, eq_n2w_iff_w2n_eq, Excl "w2n_eq_0"]
          >> drule ls_hostHoldBitAck_of_core_sim_rel
-         >> simp [i2c_combs_flat]
+         >> simp [i2c_combs_flat']
          >> decide_tac)
   >> simp []
   >> irule if_equality
   >> ‘mstate.stretch_idle_cnt = s.stretch_idle_cnt’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def,i2c_combs_flat])
+    >> simp [core_sim_rel_def,i2c_combs_flat'])
   >> Cases_on ‘mstate.fsm_state’
   >> TRY $ Cases_on ‘t’
   >> TRY $ Cases_on ‘r’
@@ -3203,7 +3372,7 @@ Proof
   >> simp [encode_fsm_def]
   >> drule encode_fsm_circuit
   >> disch_then (fn th => drule $ iffLR th)
-  >> simp [i2c_combs_flat, encode_fsm_def]
+  >> simp [i2c_combs_flat', encode_fsm_def]
   >> `fifo_rel mstate.fmt_fifo
         (i2c_circuit fext fbits n).fmt_fifo_regfile
         (i2c_circuit fext fbits n).fmt_fifo.rptr
@@ -3211,7 +3380,7 @@ Proof
   >> drule_then assume_tac fifo_rel_not_null_HD
   >> simp [Cong AND_CONG, Cong OR_CONG]
   >> drule_then assume_tac fifo_rel_null
-  >> simp [i2c_combs_flat]
+  >> simp [i2c_combs_flat']
 QED
 
 Theorem i2c_core_circuit_simulate_pend_restart:
@@ -3232,28 +3401,28 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').pend_restart = cstate1_seq.pend_restart’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
   >> drule_then assume_tac i2c_tick_pend_restart
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [i2c_combs_flat]
+  >> simp [i2c_combs_flat']
   >> ‘mstate.pend_restart ⇔ s.pend_restart’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> pop_assum (fn th => REWRITE_TAC [th])
   >> ‘mstate.counter = s.counter’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> pop_assum (fn th => REWRITE_TAC [th])
   >> ‘mstate.trans_started ⇔ s.trans_started’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> pop_assum (fn th => REWRITE_TAC [th])
   >> drule encode_fsm_circuit
-  >> disch_then (fn th => simp [th, i2c_combs_flat, encode_fsm_def])
+  >> disch_then (fn th => simp [th, i2c_combs_flat', encode_fsm_def])
   >> ‘(NULL mstate.fmt_fifo ⇔ (s.fmt_fifo.rptr = s.fmt_fifo.wptr))
       ∧ (¬ NULL mstate.fmt_fifo ==> HD mstate.fmt_fifo = (s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr : 6 word)))’
       suffices_by (metis_tac [])
@@ -3264,10 +3433,10 @@ Proof
     >- (
       disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ])
       >> qpat_x_assum ‘fifo_rel _ _ _ _’ mp_tac
-      >> simp [fifo_rel_def, i2c_combs_flat]                
+      >> simp [fifo_rel_def, i2c_combs_flat']
       )
     >> drule length_fifo
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> rpt strip_tac
     >> ‘word_bit 6 s.fmt_fifo.wptr ⇔ word_bit 6 s.fmt_fifo.rptr’ by (
       qpat_x_assum ‘s.fmt_fifo.rptr = s.fmt_fifo.wptr’ mp_tac
@@ -3284,7 +3453,7 @@ Proof
   >> disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ, listTheory.LIST_NOT_NIL])
   >> qpat_x_assum ‘core_sim_rel _ _’ (MP_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
   >> once_asm_rewrite_tac []
-  >> simp [fifo_rel_def, i2c_combs_flat]
+  >> simp [fifo_rel_def, i2c_combs_flat']
 QED         
 
 Theorem i2c_core_circuit_simulate_trans_started:
@@ -3305,20 +3474,20 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').trans_started = cstate1_seq.trans_started’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
   >> drule_then assume_tac i2c_tick_trans_started
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [i2c_combs_flat]
+  >> simp [i2c_combs_flat']
   >> ‘mstate.counter = s.counter ∧ mstate.trans_started = s.trans_started’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> ntac 2 $ pop_assum (fn th => REWRITE_TAC [th])
   >> drule encode_fsm_circuit
-  >> disch_then (fn th => simp [th, i2c_combs_flat, encode_fsm_def])
+  >> disch_then (fn th => simp [th, i2c_combs_flat', encode_fsm_def])
 QED
 
 Theorem i2c_core_circuit_simulate_bit_index:
@@ -3339,19 +3508,19 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').bit_index = cstate1_seq.bit_index’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
   >> drule_then assume_tac i2c_tick_bit_index
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [i2c_combs_flat]
+  >> simp [i2c_combs_flat']
   >> ‘mstate.counter = s.counter ∧ mstate.bit_index = s.bit_index’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> drule encode_fsm_circuit
-  >> disch_then (fn th => simp [th, i2c_combs_flat, encode_fsm_def])
+  >> disch_then (fn th => simp [th, i2c_combs_flat', encode_fsm_def])
 QED
 
 Theorem i2c_core_circuit_simulate_stretch_idle_cnt:
@@ -3372,20 +3541,20 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').stretch_idle_cnt = cstate1_seq.stretch_idle_cnt’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
   >> drule_then assume_tac i2c_tick_stretch_idle_cnt
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [i2c_combs_flat, fnum_witness'_def]
+  >> simp [i2c_combs_flat', fnum_witness'_def]
   >> ‘mstate.trans_started = s.trans_started ∧ mstate.stretch_idle_cnt = s.stretch_idle_cnt’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> ntac 2 $ pop_assum (fn th => REWRITE_TAC [th])
   >> drule encode_fsm_circuit
-  >> disch_then (fn th => simp [th, i2c_combs_flat, encode_fsm_def])
+  >> disch_then (fn th => simp [th, i2c_combs_flat', encode_fsm_def])
   >> ‘word_bit 0 (n2w (bool_to_bit (fext n).cio_scl_i) : 1 word) = (fext n).cio_scl_i’ by (
     rewrite_tac [arithmeticTheory.bool_to_bit_def]
     >> IF_CASES_TAC
@@ -3403,9 +3572,9 @@ Proof
         word_bit 9 (s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr)))’ by ( metis_tac [] )
     >> ntac 2 $ pop_assum (fn th => REWRITE_TAC [th])
     >> irule boolTheory.COND_CONG
-    >> `mstate.scl_sync = s.scl_sync` by (fs [core_sim_rel_def] >> simp [i2c_combs_flat])
+    >> `mstate.scl_sync = s.scl_sync` by (fs [core_sim_rel_def] >> simp [i2c_combs_flat'])
     >> drule ls_hostHoldBitAck_of_core_sim_rel
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> disch_then assume_tac
     >> `!w. 20w <+ w ==> s.fsm_state <> w` by simp [WORD_NOT_LOWER]
     >> drule_then assume_tac WORD_LOWER_EQ_LOWER_TRANS
@@ -3418,10 +3587,10 @@ Proof
     >- (
       disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ])
       >> qpat_x_assum ‘fifo_rel _ _ _ _’ mp_tac
-      >> simp [fifo_rel_def, i2c_combs_flat]                
+      >> simp [fifo_rel_def, i2c_combs_flat']
       )
     >> drule length_fifo
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> rpt strip_tac
     >> ‘word_bit 6 s.fmt_fifo.wptr ⇔ word_bit 6 s.fmt_fifo.rptr’ by (
       qpat_x_assum ‘s.fmt_fifo.rptr = s.fmt_fifo.wptr’ mp_tac
@@ -3438,7 +3607,7 @@ Proof
   >> disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ, listTheory.LIST_NOT_NIL])
   >> qpat_x_assum ‘core_sim_rel _ _’ (MP_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
   >> once_asm_rewrite_tac []
-  >> simp [fifo_rel_def, i2c_combs_flat]        
+  >> simp [fifo_rel_def, i2c_combs_flat']
 QED
 
 Theorem i2c_core_circuit_simulate_byte_index:
@@ -3459,20 +3628,20 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').byte_index = cstate1_seq.byte_index’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
   >> drule_then assume_tac i2c_tick_byte_index
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [i2c_combs_flat, fnum_witness'_def]
+  >> simp [i2c_combs_flat', fnum_witness'_def]
   >> ‘mstate.counter = s.counter ∧ mstate.byte_index = s.byte_index’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> ntac 2 $ pop_assum (fn th => REWRITE_TAC [th])
   >> drule encode_fsm_circuit
-  >> disch_then (fn th => simp [th, i2c_combs_flat, encode_fsm_def])
+  >> disch_then (fn th => simp [th, i2c_combs_flat', encode_fsm_def])
   >> qsuff_tac ‘(NULL mstate.fmt_fifo ⇔ (s.fmt_fifo.rptr = s.fmt_fifo.wptr))
       ∧ (¬ NULL mstate.fmt_fifo ==> HD mstate.fmt_fifo = (s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr : 6 word)))’
   >- (
@@ -3488,10 +3657,10 @@ Proof
     >- (
       disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ])
       >> qpat_x_assum ‘fifo_rel _ _ _ _’ mp_tac
-      >> simp [fifo_rel_def, i2c_combs_flat]                
+      >> simp [fifo_rel_def, i2c_combs_flat']
       )
     >> drule length_fifo
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> rpt strip_tac
     >> ‘word_bit 6 s.fmt_fifo.wptr ⇔ word_bit 6 s.fmt_fifo.rptr’ by (
       qpat_x_assum ‘s.fmt_fifo.rptr = s.fmt_fifo.wptr’ mp_tac
@@ -3508,7 +3677,7 @@ Proof
   >> disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ, listTheory.LIST_NOT_NIL])
   >> qpat_x_assum ‘core_sim_rel _ _’ (MP_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
   >> once_asm_rewrite_tac []
-  >> simp [fifo_rel_def, i2c_combs_flat]        
+  >> simp [fifo_rel_def, i2c_combs_flat']
 QED
 
 Theorem i2c_core_circuit_simulate_read_byte:
@@ -3529,19 +3698,19 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').read_byte = cstate1_seq.read_byte’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
   >> drule_then assume_tac i2c_tick_read_byte
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [i2c_combs_flat, fnum_witness'_def]
+  >> simp [i2c_combs_flat', fnum_witness'_def]
   >> drule encode_fsm_circuit
-  >> disch_then (fn th => simp [th, i2c_combs_flat, encode_fsm_def])
+  >> disch_then (fn th => simp [th, i2c_combs_flat', encode_fsm_def])
   >> ‘mstate.bit_index = s.bit_index ∧ mstate.counter = s.counter ∧ mstate.read_byte = s.read_byte ∧ mstate.sda_sync = s.sda_sync’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> NTAC 4 $ POP_ASSUM (fn th => REWRITE_TAC [th])
   >> irule if_equality
   >> conj_tac >- (simp [] )
@@ -3572,17 +3741,17 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').scl_rx_val = cstate1_seq.scl_rx_val’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> drule_then assume_tac cheshire_req_unchanged
   >> drule_then assume_tac i2c_tick_scl_rx_val
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [i2c_combs_flat, fnum_witness'_def]
+  >> simp [i2c_combs_flat', fnum_witness'_def]
   >> ‘mstate.scl_rx_val = s.scl_rx_val’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> POP_ASSUM (fn th => REWRITE_TAC [th, arithmeticTheory.bool_to_bit_def])
   >> IF_CASES_TAC
   >> simp []
@@ -3607,17 +3776,17 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').sda_rx_val = cstate1_seq.sda_rx_val’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >>   drule_then assume_tac cheshire_req_unchanged
   >> drule_then assume_tac i2c_tick_sda_rx_val
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [i2c_combs_flat, fnum_witness'_def]
+  >> simp [i2c_combs_flat', fnum_witness'_def]
   >> ‘mstate.sda_rx_val = s.sda_rx_val’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> POP_ASSUM (fn th => REWRITE_TAC [th, arithmeticTheory.bool_to_bit_def])
   >> IF_CASES_TAC
   >> simp []
@@ -3642,7 +3811,7 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').regs = cstate1_seq.regs’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> fs [i2c_state_rel_def, i2c_core_state_rel_def]
   >> rw [core_sim_rel_def]
   >> Cases_on ‘req_m’
@@ -3651,11 +3820,11 @@ Proof
   >> ‘¬ (i2c_circuit fext fbits n).valid’ by (
     fs [cheshireCircuitTheory.cheshire_req_rel_def]
     >> CHOOSE_TAC i2c_circuit_cstep
-    >> simp [Abbr ‘cstate’, i2c_combs_flat]                        
+    >> simp [Abbr ‘cstate’, i2c_combs_flat']
     )
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
-  >> simp [i2c_combs_flat, fnum_witness'_def]
+  >> simp [i2c_combs_flat', fnum_witness'_def]
   >> simp [i2cRegsTheory.i2c_regs_component_equality]
   >> REVERSE conj_tac
   >- (
@@ -3675,10 +3844,10 @@ Proof
           i2cRegsTheory.i2c_host_timeout_ctrl_component_equality
          ])
   >> drule encode_fsm_circuit
-  >> disch_then (fn th => simp [th, i2c_combs_flat, encode_fsm_def])
+  >> disch_then (fn th => simp [th, i2c_combs_flat', encode_fsm_def])
   >> ‘mstate.counter = s.counter ∧ mstate.pend_restart = s.pend_restart ∧ mstate.sda_sync = s.sda_sync’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> NTAC 3 $ pop_assum (fn th => REWRITE_TAC [th])
   >> simp [arithmeticTheory.bool_to_bit_def]
   >> ‘s.regs.intr_state.cmd_complete ‖ 1w = 1w ∧ s.regs.intr_state.nak ‖ 1w = 1w’ by (blastLib.BBLAST_TAC)
@@ -3689,7 +3858,7 @@ Proof
   >- (
     `s.regs.ctrl.enabletarget = 0w`
     by (qpat_x_assum `mstate.regs.ctrl.enabletarget = 0w` mp_tac
-        >> simp [i2c_combs_flat])
+        >> simp [i2c_combs_flat'])
     >> disch_tac
     >> rw []
     >> gvs [cheshire_req_rel_def]
@@ -3701,10 +3870,10 @@ Proof
     >- (
       disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ])
       >> qpat_x_assum ‘fifo_rel _ _ _ _’ mp_tac
-      >> simp [fifo_rel_def, i2c_combs_flat]                
+      >> simp [fifo_rel_def, i2c_combs_flat']
       )
     >> drule length_fifo
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> rpt strip_tac
     >> ‘word_bit 6 s.fmt_fifo.wptr ⇔ word_bit 6 s.fmt_fifo.rptr’ by (
       qpat_x_assum ‘s.fmt_fifo.rptr = s.fmt_fifo.wptr’ mp_tac
@@ -3721,11 +3890,11 @@ Proof
   >> disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ, listTheory.LIST_NOT_NIL])
   >> qpat_x_assum ‘core_sim_rel _ _’ (MP_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
   >> once_asm_rewrite_tac []
-  >> simp [fifo_rel_def, i2c_combs_flat])
+  >> simp [fifo_rel_def, i2c_combs_flat'])
   >> `cstate.regs.ctrl.enabletarget = 0w`
      by (qpat_assum `i2c_tick _ _ = INR _` (fn thm => mp_tac $
            MATCH_MP not_ctrl_enabletarget_of_ISR_i2c_tick (MATCH_MP INR_imp_ISR thm))
-         >> simp [i2c_combs_flat])
+         >> simp [i2c_combs_flat'])
   >> Cases_on ‘x’
   >> Cases_on ‘r’
   >> Cases_on ‘r'’                
@@ -3742,13 +3911,13 @@ Proof
     gvs [cheshireCircuitTheory.cheshire_req_rel_def]
     >> simp [Abbr ‘cstate’, Abbr ‘req_c’]
     >> CHOOSE_TAC i2c_circuit_cstep
-    >> simp [i2c_combs_flat])
+    >> simp [i2c_combs_flat'])
   >> simp [Abbr ‘cstate1_seq’, i2c_ffs_flat, Abbr ‘cstate’]
   >> CHOOSE_TAC i2c_circuit_cstep
   >> `s.regs.ctrl.enabletarget = 0w`
      by (qpat_x_assum `(_: i2c_circuit_state).regs.ctrl.enabletarget = 0w` mp_tac
-         >> simp [i2c_combs_flat])
-  >> simp [i2c_combs_flat, fnum_witness'_def]
+         >> simp [i2c_combs_flat'])
+  >> simp [i2c_combs_flat', fnum_witness'_def]
   >> simp [i2cRegsTheory.i2c_regs_component_equality]
   >> REVERSE conj_tac
   >- (
@@ -3768,10 +3937,10 @@ Proof
           i2cRegsTheory.i2c_host_timeout_ctrl_component_equality
          ])
   >> drule encode_fsm_circuit
-  >> disch_then (fn th => simp [th, i2c_combs_flat, encode_fsm_def])
+  >> disch_then (fn th => simp [th, i2c_combs_flat', encode_fsm_def])
   >> ‘mstate.counter = s.counter ∧ mstate.pend_restart = s.pend_restart ∧ mstate.sda_sync = s.sda_sync’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> NTAC 2 $ pop_assum (fn th => REWRITE_TAC [th])
   >> simp [arithmeticTheory.bool_to_bit_def]
   >> ‘s.regs.intr_state.cmd_complete ‖ 1w = 1w ∧ s.regs.intr_state.nak ‖ 1w = 1w’ by (blastLib.BBLAST_TAC)
@@ -3800,10 +3969,10 @@ Proof
     >- (
       disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ])
       >> qpat_x_assum ‘fifo_rel _ _ _ _’ mp_tac
-      >> simp [fifo_rel_def, i2c_combs_flat]                
+      >> simp [fifo_rel_def, i2c_combs_flat']
       )
     >> drule length_fifo
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> rpt strip_tac
     >> ‘word_bit 6 s.fmt_fifo.wptr ⇔ word_bit 6 s.fmt_fifo.rptr’ by (
       qpat_x_assum ‘s.fmt_fifo.rptr = s.fmt_fifo.wptr’ mp_tac
@@ -3820,7 +3989,7 @@ Proof
   >> disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ, listTheory.LIST_NOT_NIL])
   >> qpat_x_assum ‘core_sim_rel _ _’ (MP_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
   >> once_asm_rewrite_tac []
-  >> simp [fifo_rel_def, i2c_combs_flat])
+  >> simp [fifo_rel_def, i2c_combs_flat'])
   >> ‘i2c_write mstate q q' x = INR (st_upd, notif)’ by (
     qpat_x_assum ‘SUM_MAP _ _ _ = _’ mp_tac
     >> Cases_on ‘i2c_write mstate q q' x’
@@ -3835,11 +4004,11 @@ Proof
     gvs [cheshireCircuitTheory.cheshire_req_rel_def]
     >> simp [Abbr ‘cstate’, Abbr ‘req_c’]
     >> CHOOSE_TAC i2c_circuit_cstep
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     )
   >> ‘¬(i2c_circuit fext fbits n).error’ by (
     CHOOSE_TAC i2c_circuit_cstep
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> `~ISL (i2c_write mstate q q' x)` by simp []
     >> drule_then (fn thm => full_simp_tac pure_ss [thm]) i2c_req_error_i2c_write
     (* since i2c doesn't use windows, we can ignore this *)
@@ -3849,8 +4018,8 @@ Proof
   >> CHOOSE_TAC i2c_circuit_cstep
   >> `s.regs.ctrl.enabletarget = 0w`
      by (qpat_x_assum `(_: i2c_circuit_state).regs.ctrl.enabletarget = 0w` mp_tac
-         >> simp [i2c_combs_flat])
-  >> simp [i2c_combs_flat, fnum_witness'_def]
+         >> simp [i2c_combs_flat'])
+  >> simp [i2c_combs_flat', fnum_witness'_def]
   >> ‘∀w. req_c.addr = w <=> q' = w2n w ’ by (
     strip_tac
     >> gvs [cheshireCircuitTheory.cheshire_req_rel_def])
@@ -3859,13 +4028,13 @@ Proof
   >> pop_assum (fn th => REWRITE_TAC [th])
   >> EVAL_TAC
   >> drule encode_fsm_circuit
-  >> disch_then (fn th => simp [th, i2c_combs_flat, encode_fsm_def, arithmeticTheory.bool_to_bit_def])
+  >> disch_then (fn th => simp [th, i2c_combs_flat', encode_fsm_def, arithmeticTheory.bool_to_bit_def])
   >> ‘s.regs.intr_state.cmd_complete ‖ 1w = 1w ∧ s.regs.intr_state.nak ‖ 1w = 1w’ by (
     blastLib.BBLAST_TAC)
   >> NTAC 2 $ pop_assum (fn th => REWRITE_TAC [th])
   >> ‘mstate.counter = s.counter ∧ mstate.pend_restart = s.pend_restart ∧ mstate.sda_sync = s.sda_sync’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
   >> NTAC 2 $ pop_assum (fn th => REWRITE_TAC [th])
   >> ‘BIT 0 (if (fext n).cio_sda_i then 1 else 0) = (fext n).cio_sda_i’ by (
     rw []
@@ -3882,7 +4051,7 @@ Proof
   (* misc. contradictions involving intr_test *)
   >> `¬i2c_req_error req_c`
      by (qpat_x_assum `~(_: i2c_circuit_state).error` mp_tac
-         >> simp [i2c_combs_flat])
+         >> simp [i2c_combs_flat'])
   >> (Cases_on `notif` >- fs [])
   >> (Cases_on `x` >- fs [])
   >> Cases_on `i`
@@ -3897,10 +4066,10 @@ Proof
   >- (
     disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ])
     >> qpat_x_assum ‘fifo_rel _ _ _ _’ mp_tac
-    >> simp [fifo_rel_def, i2c_combs_flat]                
+    >> simp [fifo_rel_def, i2c_combs_flat']
     )
   >> drule length_fifo
-  >> simp [i2c_combs_flat]
+  >> simp [i2c_combs_flat']
   >> rpt strip_tac
   >> ‘word_bit 6 s.fmt_fifo.wptr ⇔ word_bit 6 s.fmt_fifo.rptr’ by (
     qpat_x_assum ‘s.fmt_fifo.rptr = s.fmt_fifo.wptr’ mp_tac
@@ -3917,7 +4086,7 @@ Proof
   >> disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ, listTheory.LIST_NOT_NIL])
   >> qpat_x_assum ‘core_sim_rel _ _’ (MP_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
   >> once_asm_rewrite_tac []
-  >> simp [fifo_rel_def, i2c_combs_flat]  
+  >> simp [fifo_rel_def, i2c_combs_flat']
 QED
         
 Theorem i2c_core_circuit_simulate_under_rst:
@@ -3938,7 +4107,7 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').under_rst = cstate1_seq.under_rst’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> simp [Abbr `cstate1_seq`, i2c_ffs_flat]
   >> drule_then strip_assume_tac cheshire_req_INR_st_upd_cases
   (* st_upd = I *)
@@ -3966,7 +4135,7 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').scl_buf = cstate1_seq.scl_buf’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> simp [Abbr `cstate1_seq`, i2c_ffs_flat]
   >> `mstate'.scl_buf = word_bit 0 (n2w (bool_to_bit (fext n).cio_scl_i): 1 word)` by fs [i2c_tick_def, fnum_witness'_def]
   >> drule_then strip_assume_tac cheshire_req_INR_st_upd_cases
@@ -3997,7 +4166,7 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').sda_buf = cstate1_seq.sda_buf’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> simp [Abbr `cstate1_seq`, i2c_ffs_flat]
   >> `mstate'.sda_buf = word_bit 0 (n2w (bool_to_bit (fext n).cio_sda_i): 1 word)` by fs [i2c_tick_def, fnum_witness'_def]
   >> drule_then strip_assume_tac cheshire_req_INR_st_upd_cases
@@ -4028,7 +4197,7 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').scl_sync = cstate1_seq.scl_sync’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> simp [Abbr `cstate1_seq`, i2c_ffs_flat]
   >> `mstate'.scl_sync = cstate.scl_buf` by fs [i2c_tick_def, i2c_state_rel_def, i2c_core_state_rel_def, core_sim_rel_def]
   >> drule_then strip_assume_tac cheshire_req_INR_st_upd_cases
@@ -4056,7 +4225,7 @@ Proof
   >> ‘cstate' = procs ([i2c_reg_top_comb_1] ++ i2c_core_combs ++ [i2c_reg_top_comb_2]) (fext (SUC n)) cstate1_seq cstate1_seq’
     by fs [Abbr ‘cstate'’, i2c_circuit_def, mk_module_def, mk_circuit_def, Abbr ‘cstate1_seq’]
   >> ‘(st_upd mstate').sda_sync = cstate1_seq.sda_sync’
-    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat])
+    suffices_by (simp [Abbr ‘cstate'’, i2c_combs_flat'])
   >> simp [Abbr `cstate1_seq`, i2c_ffs_flat]
   >> `mstate'.sda_sync = cstate.sda_buf` by fs [i2c_tick_def, i2c_state_rel_def, i2c_core_state_rel_def, core_sim_rel_def]
   >> drule_then strip_assume_tac cheshire_req_INR_st_upd_cases
@@ -4086,6 +4255,8 @@ Proof
   >| map (drule o SRULE [SF boolSimps.LET_ss])
          [ i2c_core_circuit_simulate_fifo_rel_rx,
            i2c_core_circuit_simulate_fifo_rel_fmt,
+           i2c_core_circuit_simulate_fifo_tx,
+           i2c_core_circuit_simulate_fifo_acq,
            i2c_core_circuit_simulate_encode_fsm,
            i2c_core_circuit_simulate_counter,
            i2c_core_circuit_simulate_pend_restart,
@@ -4106,7 +4277,26 @@ Proof
   >> simp []
 QED
 
-Theorem i2c_core_correct:
+Theorem i2c_notif_rel_alt:
+  i2c_notif_rel (notif: i2c_notif option) (reg2hw: i2c_reg2hw) <=>
+  (notif = SOME fdata_write <=> reg2hw.fdata.fbyte_qe) /\
+  (notif = SOME fdata_write <=> reg2hw.fdata.start_qe) /\
+  (notif = SOME fdata_write <=> reg2hw.fdata.stop_qe) /\
+  (notif = SOME fdata_write <=> reg2hw.fdata.read_qe) /\
+  (notif = SOME fdata_write <=> reg2hw.fdata.rcont_qe) /\
+  (notif = SOME fdata_write <=> reg2hw.fdata.nakok_qe) /\
+  (notif = SOME fifo_ctrl_write <=> reg2hw.fifo_ctrl.rxrst_qe) /\
+  (notif = SOME fifo_ctrl_write <=> reg2hw.fifo_ctrl.fmtrst_qe) /\
+  (notif = SOME fifo_ctrl_write <=> reg2hw.fifo_ctrl.rxilvl_qe) /\
+  (notif = SOME fifo_ctrl_write <=> reg2hw.fifo_ctrl.fmtilvl_qe) /\
+  (notif = SOME fifo_ctrl_write <=> reg2hw.fifo_ctrl.acqrst_qe) /\
+  (notif = SOME fifo_ctrl_write <=> reg2hw.fifo_ctrl.txrst_qe) /\
+  (notif = SOME txdata_write <=> reg2hw.txdata.txdata_qe)
+Proof
+  simp [i2c_notif_rel_def] >> decide_tac
+QED
+
+Theorem i2c_core_step_correct:
   !mstate req_m fext fbits n st_upd notif rdata.
   let
     req_c = reg_req_decode (fext n).reg_req_i: 7 reg_req
@@ -4128,13 +4318,6 @@ Proof
      by (simp [GSYM ISR_exists, i2c_tick_ISR_fnums])
   >> simp [i2c_core_state_rel_def]
   >> rpt strip_tac
-
-  (* i2c_hwext_read_rel *)
-  >- cheat
-  (* i2c_win_read_rel *)
-  >- simp [i2c_win_read_rel_def]
-  (* i2c_win_ready *)
-  >- simp [i2c_win_ready_def]
   (* core_sim_rel *)
   >- drule_all_then irule $ SRULE [SF boolSimps.LET_ss] i2c_core_circuit_simulate
   (* i2c_hw_write_rel *)
@@ -4144,7 +4327,7 @@ Proof
   >> disch_tac
   >> CHOOSE_TAC i2c_circuit_cstep
   >> ‘mstate.regs = s.regs’ by (
-    fs [i2c_state_rel_def, i2c_combs_flat])
+    fs [i2c_state_rel_def, i2c_combs_flat'])
   >> ‘s.regs.intr_state.cmd_complete ‖ 1w = 1w ∧ s.regs.intr_state.nak ‖ 1w = 1w’ by (
     blastLib.BBLAST_TAC)
   >> ‘core_sim_rel mstate (i2c_circuit fext fbits n)’ by (
@@ -4157,8 +4340,8 @@ Proof
   >> disch_tac
   >> ‘mstate.counter = s.counter ∧ mstate.pend_restart = s.pend_restart ∧ mstate.sda_sync = s.sda_sync’ by (
     qpat_x_assum ‘core_sim_rel _ _’ mp_tac
-    >> simp [core_sim_rel_def, i2c_combs_flat])
-  >> simp [i2c_combs_flat, fnum_witness'_def, arithmeticTheory.bool_to_bit_def, encode_fsm_def]
+    >> simp [core_sim_rel_def, i2c_combs_flat'])
+  >> simp [i2c_combs_flat', fnum_witness'_def, arithmeticTheory.bool_to_bit_def, encode_fsm_def]
   >> ‘(NULL mstate.fmt_fifo ⇔ (s.fmt_fifo.rptr = s.fmt_fifo.wptr))
       ∧ (¬ NULL mstate.fmt_fifo ==>
          HD mstate.fmt_fifo = (s.fmt_fifo_regfile ((5 >< 0) s.fmt_fifo.rptr : 6 word)))’
@@ -4178,9 +4361,9 @@ Proof
     >> iff_tac >- (
       disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ])
       >> qpat_x_assum ‘fifo_rel _ _ _ _’ mp_tac
-      >> simp [fifo_rel_def, i2c_combs_flat])
+      >> simp [fifo_rel_def, i2c_combs_flat'])
     >> drule length_fifo
-    >> simp [i2c_combs_flat]
+    >> simp [i2c_combs_flat']
     >> rpt strip_tac
     >> ‘word_bit 6 s.fmt_fifo.wptr ⇔ word_bit 6 s.fmt_fifo.rptr’ by (
       qpat_x_assum ‘s.fmt_fifo.rptr = s.fmt_fifo.wptr’ mp_tac
@@ -4197,9 +4380,113 @@ Proof
   >> disch_then (ASSUME_TAC o REWRITE_RULE [listTheory.NULL_EQ, listTheory.LIST_NOT_NIL])
   >> qpat_x_assum ‘core_sim_rel _ _’ (MP_TAC o CONJUNCT1 o CONJUNCT2 o REWRITE_RULE [core_sim_rel_def])
   >> once_asm_rewrite_tac []
-  >> simp [fifo_rel_def, i2c_combs_flat])
+  >> simp [fifo_rel_def, i2c_combs_flat'])
   (* i2c_win_error *)
   >- ( fs [i2c_win_error_def])
+QED
+
+Theorem i2c_core_comb_correct:
+  !mstate fext fbits n.
+  i2c_state_rel mstate (i2c_circuit fext fbits n)
+  ==> i2c_hwext_read_rel mstate (i2c_circuit fext fbits n).hw2reg
+    /\ i2c_win_read_rel mstate (i2c_circuit fext fbits n).win_buses
+    /\ i2c_win_ready (i2c_circuit fext fbits n).win_buses
+Proof
+  rpt strip_tac
+
+  (* i2c_hwext_read_rel *)
+  >- (fs [i2c_state_rel_def, i2c_core_state_rel_def]
+      >> CHOOSE_TAC i2c_circuit_cstep
+      >> fs [core_sim_rel_combs, i2c_notif_rel_i2c_combs]
+      >> drule_then assume_tac ls_hostHoldBitAck_of_core_sim_rel
+      >> fs [core_sim_rel_alt, i2c_hwext_read_rel_def]
+      >> simp [i2c_combs_flat']
+      >> rpt strip_tac
+      (* status.fmtfull *)
+      >- (simp [i2c_get_status_fmtfull_def]
+          >> drule_then assume_tac length_fifo_max
+          >> drule_then assume_tac length_fifo_eq_max
+          >> drule_then assume_tac fifo_rel_null
+          >> fs []
+          >> `∀(a: num) b. a ≤ b ⇒ (a ≥ b ⇔ a = b)` by simp []
+          >> simp []
+          >> `∀a b c d. a = ¬b ⇒ (if a then c else d: 1 word) = (if b then d else c)` by (rpt strip_tac >> IF_CASES_TAC >> fs [])
+          >> first_x_assum irule
+          >> decide_tac)
+      (* status.rxfull *)
+      >- (simp [i2c_get_status_rxfull_def]
+          >> qpat_x_assum `fifo_rel mstate.fmt_fifo _ _ _` kall_tac
+          >> drule_then assume_tac length_fifo_max
+          >> drule_then assume_tac length_fifo_eq_max
+          >> drule_then assume_tac fifo_rel_null
+          >> fs []
+          >> `∀(a: num) b. a ≤ b ⇒ (a ≥ b ⇔ a = b)` by simp []
+          >> simp []
+          >> `∀a b c d. a = ¬b ⇒ (if a then c else d: 1 word) = (if b then d else c)` by (rpt strip_tac >> IF_CASES_TAC >> fs [])
+          >> first_x_assum irule
+          >> decide_tac)
+      (* status.fmtempty *)
+      >- (simp [i2c_get_status_fmtempty_def]
+          >> drule_then assume_tac fifo_rel_null
+          >> simp []
+          >> IF_CASES_TAC
+          >> fs [])
+      (* status.hostidle *)
+      >- (simp [i2c_get_status_hostidle_def, encode_fsm_def]
+          >> `∀w. 20w <+ w ==> s.fsm_state <+ w` by (rpt strip_tac >> drule_all_then irule WORD_LOWER_EQ_LOWER_TRANS)
+          >> simp [GSYM WORD_NOT_LOWER])
+      (* status.targetidle *)
+      >- (simp [i2c_get_status_targetidle_def]
+          >> `∀w. 20w <+ w ==> s.fsm_state <+ w` by (rpt strip_tac >> drule_all_then irule WORD_LOWER_EQ_LOWER_TRANS)
+          >> simp [])
+      (* status.rxempty *)
+      >- (simp [i2c_get_status_rxempty_def]
+          >> qpat_x_assum `fifo_rel mstate.fmt_fifo _ _ _` kall_tac
+          >> drule_then assume_tac fifo_rel_null
+          >> simp []
+          >> IF_CASES_TAC
+          >> fs [])
+      (* status.txfull *)
+      >- (Cases_on `s.under_rst` >> simp [i2c_get_status_txfull_def])
+      (* status.acqfull *)
+      (* >- cheat *)
+      >- simp [i2c_get_status_acqfull_def]
+      (* status.txempty *)
+      >- simp [i2c_get_status_txempty_def]
+      (* status.acqempty *)
+      >- simp [i2c_get_status_acqempty_def]
+      (* rdata.rdata *)
+      >- (simp [i2c_get_rdata_rdata_def]
+          >> qpat_x_assum `fifo_rel mstate.fmt_fifo _ _ _` kall_tac
+          >> drule_then assume_tac fifo_rel_not_null_HD
+          >> simp []
+          >> drule_then assume_tac fifo_rel_null
+          >> simp [])
+      (* fifo_status.fmtlvl *)
+      >- (simp [i2c_get_fifo_status_fmtlvl_def]
+          >> drule_then assume_tac n2w_length_fifo
+          >> simp [GSYM EXTEND_EXTRACT])
+      (* fifo_status.txlvl *)
+      >- simp [i2c_get_fifo_status_txlvl_def]
+      (* fifo_status.rxlvl *)
+      >- (simp [i2c_get_fifo_status_rxlvl_def]
+          >> qpat_x_assum `fifo_rel mstate.fmt_fifo _ _ _` kall_tac
+          >> drule_then assume_tac n2w_length_fifo
+          >> simp [GSYM EXTEND_EXTRACT])
+      (* fifo_status.acqlvl *)
+      >- simp [i2c_get_fifo_status_acqlvl_def]
+      (* val.scl_rx *)
+      >- simp [i2c_get_val_scl_rx_def]
+      (* val.sda_rx *)
+      >- simp [i2c_get_val_sda_rx_def]
+      (* acqdata.abyte *)
+      >- simp [i2c_get_acqdata_abyte_def]
+      (* acqdata.signal *)
+      >- simp [i2c_get_acqdata_signal_def])
+  (* i2c_win_read_rel *)
+  >- simp [i2c_win_read_rel_def]
+  (* i2c_win_ready *)
+  >- simp [i2c_win_ready_def]
 QED
 
 val _ = export_theory ();

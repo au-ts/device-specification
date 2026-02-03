@@ -101,10 +101,12 @@ QED
 (* Peripheral-specific section (things that I would put in *CoreTheory if I
  * could, but which depend on things defined later) *)
 Theorem i2c_tick_ISR_ctrl_enabletarget:
-  st.regs.ctrl.enabletarget = st'.regs.ctrl.enabletarget ==>
+  st.regs.ctrl.enabletarget = st'.regs.ctrl.enabletarget /\
+  st.buffered_notif = st'.buffered_notif ==>
   ISR (i2c_tick notif st) = ISR (i2c_tick notif st')
 Proof
-  Cases_on `st'.regs.ctrl.enabletarget = 1w` >> simp [i2c_tick_def]
+  Cases_on `st'.regs.ctrl.enabletarget = 1w ∨ st'.buffered_notif = SOME txdata_write`
+  >> simp [i2c_tick_def]
 QED
 
 Theorem i2c_write_ctrl_enabletarget:
@@ -138,15 +140,49 @@ Proof
       >> rpt (goal_assum $ drule_at Any))
 QED
 
+Theorem i2c_write_buffered_notif:
+  i2c_write st nb offset wdata = INR (st_upd, notif) /\
+  i2c_write st' nb offset wdata = INR (st_upd', notif') /\
+  st''.buffered_notif = st'''.buffered_notif ==>
+  (st_upd st'').buffered_notif = (st_upd' st''').buffered_notif
+Proof
+  rpt strip_tac
+  >> rpt (dxrule_then assume_tac i2c_write_st_upd_alt)
+  >> simp []
+QED
+
+Theorem i2c_cheshire_req_buffered_notif:
+  cheshire_req i2c_read i2c_write st req = INR (st_upd, notif, rdata) /\
+  cheshire_req i2c_read i2c_write st' req = INR (st_upd', notif', rdata') /\
+  st''.buffered_notif = st'''.buffered_notif ==>
+  (st_upd st'').buffered_notif = (st_upd' st''').buffered_notif
+Proof
+  simp [cheshire_req_def]
+  >> rpt CASE_TAC
+  >- simp []
+  >- (rpt strip_tac
+      >> fs [SUM_MAP_INR]
+      >> rpt (pairarg_tac >> gvs []))
+  >- (rpt strip_tac
+      >> fs [SUM_MAP_INR]
+      >> rpt (pairarg_tac >> gvs [])
+      >> irule i2c_write_buffered_notif
+      >> simp []
+      >> rpt (goal_assum $ drule_at Any))
+QED
+
 Theorem i2c_cheshire_run_ISR_fnums:
   ISR (cheshire_run i2c_tick i2c_read i2c_write (st with fnums := fnums) reqs) =
   ISR (cheshire_run i2c_tick i2c_read i2c_write st reqs)
 Proof
-  goal_term (fn tm =>
-    `^tm /\ (ISR (cheshire_run i2c_tick i2c_read i2c_write st reqs) ==>
-    (FST (OUTR (cheshire_run i2c_tick i2c_read i2c_write (st with fnums := fnums) reqs))).regs.ctrl.enabletarget
-    = (FST (OUTR (cheshire_run i2c_tick i2c_read i2c_write st reqs))).regs.ctrl.enabletarget)`
-    suffices_by simp [])
+  qabbrev_tac `st' = FST (OUTR (cheshire_run i2c_tick i2c_read i2c_write (st with fnums := fnums) reqs))`
+  >> qabbrev_tac `st'' = FST (OUTR (cheshire_run i2c_tick i2c_read i2c_write st reqs))`
+  (* TODO: the buffered_notif bit doesn't actually have to be part of the inductive hypothesis, we can prove it with a regular by *)
+  >> goal_term (fn tm =>
+       `^tm /\ (ISR (cheshire_run i2c_tick i2c_read i2c_write st reqs) ==>
+          st'.regs.ctrl.enabletarget = st''.regs.ctrl.enabletarget /\ st'.buffered_notif = st''.buffered_notif)`
+       suffices_by simp [])
+  >> unabbrev_all_tac
   >> qid_spec_tac `st`
   >> qid_spec_tac `fnums`
   >> Induct_on `reqs` using listTheory.SNOC_INDUCT
@@ -181,8 +217,12 @@ Proof
           >> last_x_assum (fn thm => fs [ISR_exists] >> qspecl_then [`fnums`, `st`] strip_assume_tac thm)
           >> rfs [cheshire_run_SNOC, sum_bind_INR]
           >> rpt (pairarg_tac >> gvs [sum_bind_INR])
-          >> irule i2c_cheshire_req_ctrl_enabletarget
-          >> ntac 2 $ dxrule_then (fn thm => simp [thm]) i2c_tick_hwro_unchanged
+          >| [
+            irule i2c_cheshire_req_ctrl_enabletarget
+            >> ntac 2 $ dxrule_then (fn thm => simp [thm]) i2c_tick_hwro_unchanged,
+            irule i2c_cheshire_req_buffered_notif
+            >> ntac 2 $ dxrule_then (fn thm => simp [thm]) i2c_tick_buffered_notif_NONE
+          ]
           >> qexistsl [`notif'`, `notif`, `rdata'`, `rdata`, `x`, `st'³'`, `st'`]
           >> simp []))
 QED
@@ -238,7 +278,19 @@ Theorem i2c_reg_top_i2c_read_inner:
       /\ s''.raw_addr = s'.raw_addr /\ s''.addr = s'.addr /\ s''.write = s'.write
       /\ s''.wdata = s'.wdata /\ s''.wstrb = s'.wstrb /\ s''.valid = s'.valid
       /\ s''.error = s'.error /\ s''.win_buses.req = s'.win_buses.req)
-  /\ i2c_state_rel st (i2c fext fbits n)
+  /\ st.regs = (i2c fext fbits n).regs
+  /\ i2c_hwext_read_rel st (i2c fext fbits n).hw2reg
+  /\ i2c_win_read_rel st (i2c fext fbits n).win_buses
+  (* We shouldn't really be assuming this: it's true for I2C and SPI, but in
+   * general it should be perfectly fine for an access to take more than 1 cycle
+   * to complete.
+   *
+   * Right now, though, the structure of our model assumes that an access will
+   * never take more than one cycle, and I don't want to deal with fixing that
+   * just yet; besides, much of the work of fixing this would go towards Cheshire-
+   * specific code, when I don't think it's likely that we're going to find a
+   * Cheshire peripheral which doesn't respond immediately. *)
+  /\ i2c_win_ready (i2c fext fbits n).win_buses
   /\ cheshire_req_rel (SOME (nb, offset, NONE)) req
   /\ ~rsp.error
   ==> ?notif. i2c_read st nb offset = INR (notif, rsp.rdata)
@@ -251,9 +303,8 @@ Proof
   >> qmatch_goalsub_abbrev_tac `mk_module sstep cstep`
   >> `?s'. mk_circuit sstep cstep (i2c_circuit_init fbits) fext n = cstep (fext n) s' s'` by irule mk_circuit_cstep
   >> unabbrev_all_tac
-  >> fs [mk_module_def, procs_def, procs_append, i2c_state_rel_def, i2c_core_state_rel_def, i2c_hwext_read_rel_def, i2c_win_read_rel_def, i2c_win_ready_def]
+  >> fs [mk_module_def, procs_def, procs_append, i2c_hwext_read_rel_def, i2c_win_read_rel_def, i2c_win_ready_def]
   >> first_x_assum kall_tac
-  >> qpat_x_assum `i2c_notif_rel _ _` kall_tac
   >> rpt (qpat_x_assum `!nb offset. _` $ qspecl_then [`nb`, `offset`] assume_tac)
   >> gvs [cheshire_req_rel_def]
   >> gs [i2c_reg_top_comb_2_flat, procs_unchanged, reg_rsp_decode_def, word_extract_bit_field_insert, word_bit_bit_field_insert]
@@ -369,8 +420,6 @@ Theorem i2c_reg_top_rsp_correct_inner:
      *
      * So, we can try switching to that if this way turns out to be annoying. *)
     /\ i2c_hwext_notif_rel notif req_c
-    (* Note: somewhat counterintuitively, this actually shows that
-     * i2c_hwext_read_rel is true for the next clock cycle, not this one. *)
     ==> ?fnums. i2c_core_state_rel (st_upd (OUTR (i2c_tick notif (st with fnums := fnums)))) (i2c fext fbits (SUC n))
       (* Note: this is only true because st_upd hasn't run yet, otherwise software
        * might have overwritten some stuff and made this false. *)
@@ -378,6 +427,9 @@ Theorem i2c_reg_top_rsp_correct_inner:
                           (i2c fext fbits n).hw2reg
       /\ ~i2c_win_error (i2c fext fbits n).win_buses)
   /\ i2c_state_rel st (i2c fext fbits n)
+  /\ i2c_hwext_read_rel st (i2c fext fbits n).hw2reg
+  /\ i2c_win_read_rel st (i2c fext fbits n).win_buses
+  /\ i2c_win_ready (i2c fext fbits n).win_buses
   /\ cheshire_req_rel req_m req_c
   /\ cheshire_req i2c_read i2c_write st req_m = INR (st_upd, notif, rdata)
   /\ req_c.valid
@@ -401,7 +453,7 @@ Proof
   (* rdata *)
   >- (drule_then strip_assume_tac cheshire_req_INR_cases
       >- fs []
-      >- (gvs []
+      >- (gvs [i2c_state_rel_def]
           >> drule_all_then strip_assume_tac i2c_reg_top_i2c_read
           >> gvs [])
       >- fs [])
@@ -602,6 +654,11 @@ Theorem i2c_reg_top_correct:
       /\ i2c_hw_write_rel (st with fnums := fnums).regs (OUTR (i2c_tick notif (st with fnums := fnums))).regs
                           (i2c fext fbits n).hw2reg
       /\ ~i2c_win_error (i2c fext fbits n).win_buses)
+  /\ (!st fext fbits n.
+    i2c_state_rel st (i2c fext fbits n)
+    ==> i2c_hwext_read_rel st (i2c fext fbits n).hw2reg
+      /\ i2c_win_read_rel st (i2c fext fbits n).win_buses
+      /\ i2c_win_ready (i2c fext fbits n).win_buses)
 
   (* We phrase it this way instead of as i2c_circuit_init fbits so that
    * combinational signals are set instead of being random values from fbits. *)
@@ -674,6 +731,7 @@ Proof
     `req.valid` by (drule_then strip_assume_tac cheshire_req_INR_cases
                     >> gvs [Abbr `req`, cheshire_req_rel_def])
   ]
+  >> qpat_x_assum `!st fext fbits n. _` $ qspecl_then [`st''`, `fext`, `fbits`, `LENGTH rdatas'`] (drule_then strip_assume_tac)
   >> `rsp.ready`
       by (fs [Abbr `rsp`]
           >> drule_then irule i2c_reg_top_rsp_ready

@@ -52,6 +52,6 @@ val i2c_reg_top_correct' = i2c_reg_top_correct
 (* this is the theorem ‘i2c_reg_top_correct’ with the first two assumptions
    being discharged, targetted specifically for ‘i2c_circuit’ *)
 Theorem i2c_correct =
-  MATCH_MP (MATCH_MP (MATCH_MP i2c_reg_top_correct' asm1) asm2) i2c_core_correct
+  MATCH_MP (MATCH_MP (MATCH_MP (MATCH_MP i2c_reg_top_correct' asm1) asm2) i2c_core_step_correct) i2c_core_comb_correct
 
 val _ = export_theory ();

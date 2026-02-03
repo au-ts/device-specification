@@ -121,7 +121,7 @@ Definition i2c_get_status_rxempty_def:
 End
 
 Definition i2c_get_status_txfull_def:
-  i2c_get_status_txfull (st: i2c_state) = 0w
+  i2c_get_status_txfull (st: i2c_state) = if st.under_rst then 1w else 0w
 End
 
 Definition i2c_get_status_acqfull_def:
@@ -129,11 +129,11 @@ Definition i2c_get_status_acqfull_def:
 End
 
 Definition i2c_get_status_txempty_def:
-  i2c_get_status_txempty (st: i2c_state) = 0w
+  i2c_get_status_txempty (st: i2c_state) = 1w
 End
 
 Definition i2c_get_status_acqempty_def:
-  i2c_get_status_acqempty (st: i2c_state) = 0w
+  i2c_get_status_acqempty (st: i2c_state) = 1w
 End
 
 Definition i2c_get_rdata_rdata_def:
@@ -204,7 +204,7 @@ End
  * occurs, but for `hwext` registers it occurs on the same clock cycle. *)
 Definition i2c_tick_def:
   i2c_tick (hwext_notif: i2c_hwext_notif option) (st: i2c_state): ffi_outcome + i2c_state =
-    if st.regs.ctrl.enabletarget = 1w then INL FFI_failed else
+    if st.regs.ctrl.enabletarget = 1w ∨ st.buffered_notif = SOME txdata_write then INL FFI_failed else
     let
       fnums = st.fnums;
 
@@ -551,7 +551,8 @@ QED
 Theorem i2c_tick_ISR_fnums:
   ISR (i2c_tick notif (st with fnums := fnums)) = ISR (i2c_tick notif st)
 Proof
-  Cases_on `st.regs.ctrl.enabletarget = 1w` >> simp [i2c_tick_def]
+  Cases_on `st.regs.ctrl.enabletarget = 1w ∨ st.buffered_notif = SOME txdata_write`
+  >> simp [i2c_tick_def]
 QED
 
 Theorem i2c_tick_unused_fnums:
@@ -560,7 +561,7 @@ Theorem i2c_tick_unused_fnums:
   SUM_MAP I (\st'. st' with fnums := (\i. fnums (i + n))) (i2c_tick notif st)
 Proof
   qexists `15`
-  >> Cases_on `st.regs.ctrl.enabletarget = 1w`
+  >> Cases_on `st.regs.ctrl.enabletarget = 1w ∨ st.buffered_notif = SOME txdata_write`
   >> simp [i2c_tick_def, SF ETA_ss]
 QED
 
